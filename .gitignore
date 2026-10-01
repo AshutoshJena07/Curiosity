@@ -1,0 +1,53 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+
+# Environment variables & secrets (Never commit!)
+.env
+.env.*
+.env.local
+!.env.example
+
+# IDE, OS & Agent directories
+.gemini/
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Backups & Scratch
+_backup_legacy_logic/
+scratch/
+
+# Dependencies & Build artifacts
+node_modules/
+dist/
+
+# Data and trained models (keep heavy binaries out of git)
+data/raw/*
+data/processed/*
+data/cache/*
+*.pt
+*.pth
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+!data/cache/.gitkeep
+!models/.gitkeep
+
+# Application output & logs
+outputs/*
+!outputs/.gitkeep
+*.log
+.streamlit/secrets.toml
+
+# Local databases
+*.db
+*.sqlite3
+
+# Hugging Face & AI model caches
+hf_cache/

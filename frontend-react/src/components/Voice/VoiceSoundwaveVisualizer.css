@@ -1,0 +1,178 @@
+/* =====================================================================
+   VOICE SOUNDWAVE VISUALIZER (SONAR / ACOUSTIC SPHERICAL WAVE EFFECT)
+   Activates smoothly when user clicks "Read" on any response
+   ===================================================================== */
+
+.voice-soundwave-backdrop {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 100%;
+  max-width: 1200px;
+  height: 600px;
+  pointer-events: none;
+  z-index: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.85s cubic-bezier(0.16, 1, 0.3, 1), visibility 0.85s, transform 0.85s cubic-bezier(0.16, 1, 0.3, 1);
+  overflow: visible;
+}
+
+.voice-soundwave-backdrop.active {
+  opacity: 1;
+  visibility: visible;
+  transform: translate(-50%, -50%) scale(1);
+}
+
+.voice-soundwave-svg {
+  width: 100%;
+  height: 100%;
+  max-height: 520px;
+  overflow: visible;
+  filter: drop-shadow(0 0 25px rgba(147, 197, 253, 0.35));
+}
+
+/* Ambient Radial Core Light */
+.soundwave-ambient-glow {
+  position: absolute;
+  width: 440px;
+  height: 440px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(147, 197, 253, 0.16) 0%, rgba(59, 130, 246, 0.08) 35%, transparent 70%);
+  filter: blur(40px);
+  animation: soundwaveCorePulse 3.2s ease-in-out infinite;
+  pointer-events: none;
+}
+
+/* Concentric Rings Animations */
+.soundwave-ring-center {
+  transform-origin: center;
+  animation: soundwaveCenterBreathing 2.6s ease-in-out infinite alternate;
+}
+
+.soundwave-ring-1 {
+  transform-origin: center;
+  animation: soundwaveWaveRipple 3.0s ease-in-out infinite alternate;
+  animation-delay: -0.6s;
+}
+
+.soundwave-ring-2 {
+  transform-origin: center;
+  animation: soundwaveWaveRipple 3.4s ease-in-out infinite alternate;
+  animation-delay: -1.2s;
+}
+
+.soundwave-ring-3 {
+  transform-origin: center;
+  animation: soundwaveWaveRipple 3.8s ease-in-out infinite alternate;
+  animation-delay: -1.8s;
+}
+
+.soundwave-ring-4 {
+  transform-origin: center;
+  animation: soundwaveWaveRipple 4.2s ease-in-out infinite alternate;
+  animation-delay: -2.4s;
+}
+
+@keyframes soundwaveCenterBreathing {
+  0% {
+    transform: scale(0.97);
+    opacity: 0.85;
+  }
+  100% {
+    transform: scale(1.03);
+    opacity: 1;
+  }
+}
+
+@keyframes soundwaveWaveRipple {
+  0% {
+    transform: scale(0.96);
+    opacity: 0.65;
+  }
+  50% {
+    opacity: 0.95;
+  }
+  100% {
+    transform: scale(1.04);
+    opacity: 0.55;
+  }
+}
+
+@keyframes soundwaveCorePulse {
+  0%, 100% {
+    transform: scale(0.92);
+    opacity: 0.7;
+  }
+  50% {
+    transform: scale(1.1);
+    opacity: 1;
+  }
+}
+
+/* Subtle Floating Audio Wave Live Badge */
+.soundwave-status-pill {
+  position: absolute;
+  bottom: 24px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-radius: 20px;
+  background: rgba(15, 23, 42, 0.75);
+  border: 1px solid rgba(147, 197, 253, 0.25);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5), 0 0 15px rgba(147, 197, 253, 0.15);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  pointer-events: auto;
+  animation: soundwavePillFadeIn 0.5s ease-out;
+}
+
+.soundwave-status-text {
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: #e2e8f0;
+  text-transform: uppercase;
+}
+
+.soundwave-bars {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 12px;
+}
+
+.soundwave-bar {
+  width: 2.5px;
+  height: 100%;
+  background: #38bdf8;
+  border-radius: 2px;
+  animation: soundwaveBarBeat 1.2s ease-in-out infinite alternate;
+}
+
+.soundwave-bar:nth-child(1) { animation-delay: 0.0s; height: 6px; }
+.soundwave-bar:nth-child(2) { animation-delay: 0.2s; height: 12px; }
+.soundwave-bar:nth-child(3) { animation-delay: 0.4s; height: 8px; }
+.soundwave-bar:nth-child(4) { animation-delay: 0.1s; height: 10px; }
+
+@keyframes soundwaveBarBeat {
+  0% { transform: scaleY(0.4); opacity: 0.6; }
+  100% { transform: scaleY(1.0); opacity: 1; }
+}
+
+@keyframes soundwavePillFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

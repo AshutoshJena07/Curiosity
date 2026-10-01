@@ -1,0 +1,252 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   DeleteInteractionButton.css
+   Pixel-perfect, physics-based Framer Delete Interaction styling
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.delete-interaction-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  border: 1px solid transparent;
+  font-family: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  outline: none;
+  user-select: none;
+  white-space: nowrap;
+  box-sizing: border-box;
+  overflow: hidden;
+  transition: 
+    background-color 0.45s cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 0.45s cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 0.45s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.18s cubic-bezier(0.16, 1, 0.3, 1),
+    width 0.45s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform, background-color;
+}
+
+.delete-interaction-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.delete-interaction-btn:active:not(:disabled) {
+  transform: scale(0.94);
+}
+
+/* ── Sizes ─────────────────────────────────────────────────────────────────── */
+.delete-interaction-btn.sm {
+  height: 36px;
+  padding: 0 14px;
+  font-size: 13px;
+  gap: 8px;
+}
+
+.delete-interaction-btn.md {
+  height: 44px;
+  padding: 0 18px;
+  font-size: 14px;
+  gap: 10px;
+}
+
+.delete-interaction-btn.lg {
+  height: 52px;
+  padding: 0 24px;
+  font-size: 15px;
+  gap: 12px;
+}
+
+.btn-content-inner {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+}
+
+/* ── State 1: Default (Red Danger Pill) ─────────────────────────────────────── */
+.delete-interaction-btn.default {
+  background-color: #FE322A;
+  color: #ffffff;
+  box-shadow: 0px 4px 14px rgba(254, 50, 42, 0.3);
+}
+
+.delete-interaction-btn.default:hover {
+  background-color: #e52922;
+  box-shadow: 0px 6px 18px rgba(254, 50, 42, 0.42);
+}
+
+.state-default {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  animation: deleteFadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.delete-trash-icon {
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
+}
+
+.delete-interaction-btn.default:hover .delete-trash-icon {
+  transform: rotate(-10deg) scale(1.08);
+}
+
+/* ── State 2: Timer (Cancel Countdown Pill) ─────────────────────────────────── */
+.delete-interaction-btn.timer {
+  background-color: #F7F7F7;
+  color: #FE322A;
+  border-color: rgba(254, 50, 42, 0.2);
+  box-shadow: 0px 4px 16px rgba(0, 0, 0, 0.08);
+}
+
+/* Dark theme adapt for Timer background */
+:root:not([data-theme='light']) .delete-interaction-btn.timer,
+[data-theme='dark'] .delete-interaction-btn.timer,
+.dark .delete-interaction-btn.timer {
+  background-color: #1c1c20;
+  border-color: rgba(254, 50, 42, 0.3);
+  box-shadow: 0px 4px 18px rgba(0, 0, 0, 0.35);
+}
+
+.state-timer {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  animation: deleteFadeIn 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Undo Circle Badge */
+.undo-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background-color: #FE322A;
+  color: #ffffff;
+  flex-shrink: 0;
+  box-shadow: 0 2px 6px rgba(254, 50, 42, 0.35);
+  transition: transform 0.25s ease;
+}
+
+.delete-interaction-btn.timer:hover .undo-badge {
+  transform: rotate(-35deg) scale(1.06);
+}
+
+.undo-icon {
+  transition: transform 0.3s ease;
+}
+
+.btn-cancel-text {
+  font-weight: 500;
+  color: #FE322A;
+  letter-spacing: -0.01em;
+}
+
+/* Live Countdown Number Badge */
+.countdown-pill {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background-color: #FE322A;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+  flex-shrink: 0;
+  box-shadow: 0 2px 6px rgba(254, 50, 42, 0.35);
+  animation: numberPop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.countdown-number {
+  line-height: 1;
+}
+
+/* ── State 3: Success ("Deleted") ───────────────────────────────────────────── */
+.delete-interaction-btn.success {
+  background-color: #F7F7F7;
+  color: #009463;
+  border-color: rgba(0, 148, 99, 0.25);
+  box-shadow: 0px 4px 16px rgba(0, 148, 99, 0.15);
+  cursor: default;
+}
+
+:root:not([data-theme='light']) .delete-interaction-btn.success,
+[data-theme='dark'] .delete-interaction-btn.success,
+.dark .delete-interaction-btn.success {
+  background-color: #17241e;
+  border-color: rgba(0, 148, 99, 0.35);
+  box-shadow: 0px 4px 18px rgba(0, 0, 0, 0.35);
+}
+
+.state-success {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  animation: deleteFadeIn 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.success-icon-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background-color: #009463;
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(0, 148, 99, 0.4);
+  animation: scalePop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.btn-success-text {
+  font-weight: 600;
+  color: #009463;
+  letter-spacing: -0.01em;
+}
+
+/* ── Animations ─────────────────────────────────────────────────────────────── */
+@keyframes deleteFadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.92) translateY(2px);
+    filter: blur(4px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+    filter: blur(0px);
+  }
+}
+
+@keyframes numberPop {
+  0% {
+    transform: scale(0.65) translateY(-3px);
+    opacity: 0.3;
+  }
+  60% {
+    transform: scale(1.15) translateY(0);
+  }
+  100% {
+    transform: scale(1) translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes scalePop {
+  0% {
+    transform: scale(0.5);
+    opacity: 0;
+  }
+  70% {
+    transform: scale(1.2);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
