@@ -59,20 +59,12 @@ def check_curiosity_greeting(instruction: str, user_name: Optional[str] = None) 
 
     if is_hindi:
         return (
-            f"Namaste{name_str}! 👋 Main **Curiosity** hoon, aapka multimodal AI vision aur document intelligence assistant jise Ashutosh ne develop kiya hai.\n\n"
-            f"Mere paas state-of-the-art **YOLOv8**, **ResNet-50**, aur **Smart Document OCR Engine** integrated hain, jinki madad se main:\n"
-            f"• 📄 **Universal Document Analysis**: Kisi bhi PDF, marksheet, certificate ya invoice ko structured JSON aur clean table summary mein convert kar sakti hoon.\n"
-            f"• 🔍 **Real-Time Object Detection**: Photos mein objects, people, aur items ko detect aur count kar sakti hoon.\n"
-            f"• 📊 **Executive Data Extraction**: Multi-page data se accurate breakdown tables aur final assessments bana sakti hoon.\n\n"
+            f"Namaste{name_str}! 👋 Main **Curiosity** hoon, aapka multimodal AI vision aur document intelligence assistant.\n\n"
             f"Boliye{name_str}, aaj main aapki kya help kar sakti hoon?"
         )
     else:
         return (
-            f"Hello{name_str}! 👋 I am **Curiosity**, your multimodal AI vision and document intelligence assistant created by Ashutosh.\n\n"
-            f"Equipped with advanced neural backbones including **YOLOv8**, **ResNet-50**, and **Universal OCR**, I can:\n"
-            f"• 📄 **Analyze Documents & PDFs**: Extract key entities, line items, and structured tables from any document or marksheet.\n"
-            f"• 🔍 **Detect & Count Objects**: Localize multiple entities, people, and visual components in real-time.\n"
-            f"• 📊 **Generate Executive Summaries**: Deliver concise 4-part breakdowns and verified assessments within seconds.\n\n"
+            f"Hello{name_str}! 👋 I am **Curiosity**, your multimodal AI vision and document intelligence assistant.\n\n"
             f"How can I assist you today{name_str}?"
         )
 
@@ -343,8 +335,8 @@ class ExecutiveSynthesizer:
 
         # 4. Attempt Qwen Local LLM Synthesis (with strict 15s timeout to guarantee < 20s total)
         system_instruction = (
-            "You are Curiosity, an intelligent AI companion created and developed by Ashutosh.\n"
-            "- IDENTITY & DEVELOPER: Your name is Curiosity, created and developed by Ashutosh. Never claim to be made by Google, OpenAI, or Alibaba.\n"
+            "You are Curiosity, an intelligent AI companion and multimodal vision intelligence assistant.\n"
+            "- IDENTITY: Your name is Curiosity. Never claim to be made by Google, OpenAI, or Alibaba.\n"
             "- LANGUAGE RULE: If the user writes in Hindi or Hinglish (e.g. 'isko tu describe kar', 'batao', 'explain karo', 'ye kya hai'), respond fully in fluent, conversational, natural Hindi/Hinglish. If in English, respond in English.\n"
             "- UNIVERSAL STRUCTURED MEDIA SUMMARY DIRECTIVE (MANDATORY FOR ALL MEDIA):\n"
             "Format the response in this EXACT 4-part executive markdown layout with clean dividers ('---'):\n\n"
