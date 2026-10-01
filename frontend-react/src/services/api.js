@@ -68,6 +68,30 @@ export async function analyzeFile(prompt, fileObj, history = [], userName = '') 
   return result;
 }
 
+async function parseJsonResponse(response, fallbackMsg = 'Request failed') {
+  let data = null;
+  try {
+    const text = await response.text();
+    data = text ? JSON.parse(text) : null;
+  } catch (err) {
+    data = null;
+  }
+
+  if (!response.ok) {
+    if (response.status === 502 || response.status === 503 || response.status === 504) {
+      const err = new Error('Backend server is offline or unreachable. Please run run_backend.bat to start it.');
+      err.status = response.status;
+      throw err;
+    }
+    const msg = data?.detail || data?.message || `${fallbackMsg} (Status ${response.status})`;
+    const error = new Error(msg);
+    error.status = response.status;
+    throw error;
+  }
+
+  return data;
+}
+
 // User Authentication API Calls
 export async function registerUser(email, password) {
   const response = await fetch('/api/auth/register', {
@@ -75,11 +99,7 @@ export async function registerUser(email, password) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, password })
   });
-  const data = await response.json();
-  if (!response.ok) {
-    throw new Error(data.detail || 'Registration failed');
-  }
-  return data;
+  return await parseJsonResponse(response, 'Registration failed');
 }
 
 export async function loginUser(email, password) {
@@ -88,11 +108,7 @@ export async function loginUser(email, password) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, password })
   });
-  const data = await response.json();
-  if (!response.ok) {
-    throw new Error(data.detail || 'Login failed');
-  }
-  return data; // returns { token, email }
+  return await parseJsonResponse(response, 'Login failed');
 }
 
 export async function supabaseLogin(accessToken) {
@@ -101,11 +117,7 @@ export async function supabaseLogin(accessToken) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ access_token: accessToken })
   });
-  const data = await response.json();
-  if (!response.ok) {
-    throw new Error(data.detail || 'Supabase authentication failed');
-  }
-  return data; // returns { token, email, name }
+  return await parseJsonResponse(response, 'Supabase authentication failed');
 }
 
 export async function logoutUser(token) {
@@ -113,11 +125,7 @@ export async function logoutUser(token) {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${token}` }
   });
-  const data = await response.json();
-  if (!response.ok) {
-    throw new Error(data.detail || 'Logout failed');
-  }
-  return data;
+  return await parseJsonResponse(response, 'Logout failed');
 }
 
 export async function getMe(token) {
@@ -125,13 +133,7 @@ export async function getMe(token) {
     method: 'GET',
     headers: { 'Authorization': `Bearer ${token}` }
   });
-  const data = await response.json();
-  if (!response.ok) {
-    const error = new Error(data.detail || 'Failed to fetch user profile');
-    error.status = response.status;
-    throw error;
-  }
-  return data; // returns { id, email }
+  return await parseJsonResponse(response, 'Failed to fetch user profile');
 }
 
 
@@ -141,11 +143,7 @@ export async function fetchConversations(token) {
     method: 'GET',
     headers: { 'Authorization': `Bearer ${token}` }
   });
-  const data = await response.json();
-  if (!response.ok) {
-    throw new Error(data.detail || 'Failed to fetch conversations history');
-  }
-  return data; // returns array of conversation items
+  return await parseJsonResponse(response, 'Failed to fetch conversations history');
 }
 
 export async function fetchConversationDetail(conversationId, token) {
@@ -153,11 +151,7 @@ export async function fetchConversationDetail(conversationId, token) {
     method: 'GET',
     headers: { 'Authorization': `Bearer ${token}` }
   });
-  const data = await response.json();
-  if (!response.ok) {
-    throw new Error(data.detail || 'Failed to fetch conversation details');
-  }
-  return data; // returns { id, title, messages, attachments }
+  return await parseJsonResponse(response, 'Failed to fetch conversation details');
 }
 
 export async function saveConversation(conversationData, token) {
@@ -169,11 +163,7 @@ export async function saveConversation(conversationData, token) {
     },
     body: JSON.stringify(conversationData)
   });
-  const data = await response.json();
-  if (!response.ok) {
-    throw new Error(data.detail || 'Failed to save conversation');
-  }
-  return data;
+  return await parseJsonResponse(response, 'Failed to save conversation');
 }
 
 export async function deleteConversation(conversationId, token) {
@@ -181,10 +171,7 @@ export async function deleteConversation(conversationId, token) {
     method: 'DELETE',
     headers: { 'Authorization': `Bearer ${token}` }
   });
-  const data = await response.json();
-  if (!response.ok) {
-    throw new Error(data.detail || 'Failed to delete conversation');
-  }
-  return data;
+  return await parseJsonResponse(response, 'Failed to delete conversation');
 }
+
 
