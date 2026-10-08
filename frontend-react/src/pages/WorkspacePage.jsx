@@ -42,6 +42,7 @@ export default function WorkspacePage({
   const [messages, setMessages] = useState([]);
   const [prompt, setPrompt] = useState('');
   const [activeFile, setActiveFile] = useState(null);
+  const sessionFileRef = useRef(null);
 
   // Speech Hook Integration
   const {
@@ -57,37 +58,48 @@ export default function WorkspacePage({
 
   // Voice configurations states
   const [selectedVoiceName, setSelectedVoiceName] = useState(() => {
-    return localStorage.getItem('active_voice_model') || 'inworld-Sarah';
+    return localStorage.getItem('active_voice_model') || 'sarvam-ritu';
   });
   const [speechSpeed, setSpeechSpeed] = useState(1.0);
   const [speechPitch, setSpeechPitch] = useState(1.0);
   const [speakingMessageId, setSpeakingMessageId] = useState(null);
 
-  // Inworld AI Voice catalog & custom voice management
-  const [inworldVoiceList, setInworldVoiceList] = useState([
-    { id: 'Sarah', displayName: 'Sarah (Inworld Studio Female)', lang: 'en-US' },
-    { id: 'Anjali', displayName: 'Anjali (Inworld Indian Female)', lang: 'en-IN' },
-    { id: 'Vincent', displayName: 'Vincent (Inworld Classy Male)', lang: 'en-US' },
-    { id: 'Ashley', displayName: 'Ashley (Inworld Warm Female)', lang: 'en-US' },
-    { id: 'Carter', displayName: 'Carter (Inworld Announcer Male)', lang: 'en-US' },
-  ]);
-  const [customVoices, setCustomVoices] = useState(() => {
-    try {
-      const saved = localStorage.getItem('inworld_custom_voices');
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
+  // Emotion and expressiveness states (Sarvam bulbul:v3)
+  const [selectedEmotion, setSelectedEmotion] = useState(() => {
+    return localStorage.getItem('active_voice_emotion') || 'neutral';
   });
-  const [newVoiceInput, setNewVoiceInput] = useState('');
+  const [emotionExpressiveness, setEmotionExpressiveness] = useState(0.85);
+  const [sarvamEmotions, setSarvamEmotions] = useState([
+    { id: 'neutral', label: 'Natural', emoji: '🌟', description: 'Balanced everyday speech with natural rhythm', temperature: 0.60 },
+    { id: 'cheerful', label: 'Cheerful', emoji: '😊', description: 'Warm, joyful and enthusiastic delivery', temperature: 0.85 },
+    { id: 'excited', label: 'Excited', emoji: '🤩', description: 'High-energy, celebratory and animated inflection', temperature: 0.95 },
+    { id: 'calm', label: 'Calm', emoji: '😌', description: 'Soothing, gentle pauses and relaxed intonation', temperature: 0.50 },
+    { id: 'empathetic', label: 'Empathetic', emoji: '🥺', description: 'Comforting, compassionate and heartfelt voice', temperature: 0.65 },
+    { id: 'dramatic', label: 'Dramatic', emoji: '🎭', description: 'Theatrical narrative with expressive dynamic range', temperature: 0.92 },
+    { id: 'professional', label: 'Formal', emoji: '💼', description: 'Crisp, authoritative and boardroom-level clarity', temperature: 0.35 },
+    { id: 'urgent', label: 'Urgent', emoji: '⚡', description: 'Fast-paced, prompt, alert and compelling delivery', temperature: 0.80 },
+    { id: 'somber', label: 'Somber', emoji: '😔', description: 'Reflective, deep and thoughtful cadence', temperature: 0.45 },
+    { id: 'curious', label: 'Curious', emoji: '🧐', description: 'Engaged, questioning tone with lively vocal lift', temperature: 0.78 }
+  ]);
 
-  // Fetch registered voices from backend on mount
+  // Exclusively Ritu and Shubh voices
+  const [sarvamVoiceList, setSarvamVoiceList] = useState([
+    { id: 'ritu', displayName: 'Ritu (Female)', lang: 'hi-IN / en-IN', description: 'Expressive and lively female voice' },
+    { id: 'shubh', displayName: 'Shubh (Male)', lang: 'hi-IN / en-IN', description: 'Articulate and natural male voice' },
+  ]);
+
+  // Fetch registered voices and emotions from backend on mount
   useEffect(() => {
     fetch('/tts/voices')
       .then(res => res.ok ? res.json() : null)
       .then(data => {
-        if (data && Array.isArray(data.voices) && data.voices.length > 0) {
-          setInworldVoiceList(data.voices);
+        if (data) {
+          if (Array.isArray(data.voices) && data.voices.length > 0) {
+            setSarvamVoiceList(data.voices);
+          }
+          if (Array.isArray(data.emotions) && data.emotions.length > 0) {
+            setSarvamEmotions(data.emotions);
+          }
         }
       })
       .catch(() => {});
@@ -282,7 +294,7 @@ export default function WorkspacePage({
   // Auto-initialize first English voice or fallback voice on mount/load
   useEffect(() => {
     if (voices.length > 0 && !selectedVoiceName) {
-      setSelectedVoiceName('inworld-Sarah');
+      setSelectedVoiceName('sarvam-pavithra');
     }
   }, [voices, selectedVoiceName]);
 
@@ -319,7 +331,20 @@ export default function WorkspacePage({
 
   // Centralized File Validation and Attachment Setter
   const handleAttachFile = useCallback((file) => {
-    if (!validateFileExtension(file.name)) {
+    if (!file) return;
+    let effectiveFile = file;
+
+    // Handle pasted images or blobs that lack a proper file name or extension
+    if (file.type && file.type.startsWith('image/')) {
+      const parts = (file.name || '').split('.');
+      const hasExt = parts.length > 1 && parts.pop().length >= 2;
+      if (!hasExt || file.name === 'blob' || file.name === 'image') {
+        const subtype = file.type.split('/')[1] || 'png';
+        const safeExt = subtype === 'jpeg' ? 'jpg' : subtype.split('+')[0];
+        const newName = `pasted_image_${Date.now()}.${safeExt}`;
+        effectiveFile = new File([file], newName, { type: file.type });
+      }
+    } else if (!validateFileExtension(file.name, file.type)) {
       alert(`Unsupported file format: "${file.name}".\n\nAllowed formats:\n• Images: png, jpg, jpeg, webp, bmp, gif, svg\n• Videos: mp4, avi, mov, mkv, webm\n• Documents: pdf, docx, doc, pptx, ppt\n• Data: xlsx, xls, csv\n• Text/Code: txt, json, md, py, js, ts`);
       return;
     }
@@ -328,11 +353,11 @@ export default function WorkspacePage({
       URL.revokeObjectURL(activeFile.previewUrl);
     }
 
-    const previewUrl = file.type.startsWith('image/') ? URL.createObjectURL(file) : '';
+    const previewUrl = effectiveFile.type?.startsWith('image/') ? URL.createObjectURL(effectiveFile) : '';
     setActiveFile({
-      fileObj: file,
-      name: file.name,
-      type: file.type,
+      fileObj: effectiveFile,
+      name: effectiveFile.name,
+      type: effectiveFile.type,
       previewUrl: previewUrl
     });
   }, [activeFile]);
@@ -368,13 +393,20 @@ export default function WorkspacePage({
     };
   }, [handleAttachFile]);
 
-  // Paste handler listener (Ctrl+V)
+  // Global Clipboard Paste handler (Ctrl+V anywhere in workspace)
   useEffect(() => {
     const handlePaste = (e) => {
-      const items = (e.clipboardData || e.originalEvent?.clipboardData)?.items;
+      const items = (e.clipboardData || window.clipboardData)?.items;
       if (!items) return;
       for (const item of items) {
-        if (item.kind === 'file') {
+        if (item.type && item.type.startsWith('image/')) {
+          const file = item.getAsFile();
+          if (file) {
+            e.preventDefault();
+            handleAttachFile(file);
+            break;
+          }
+        } else if (item.kind === 'file') {
           const file = item.getAsFile();
           if (file) {
             e.preventDefault();
@@ -406,26 +438,29 @@ export default function WorkspacePage({
     setSpeakingMessageId(null);
   }, [stopSpeech]);
 
-  // Synthesize and play audio using Inworld AI or Ultra-Realistic Cloud Voice Model
-  const playCloudTTS = async (text, msgId = null, overrideVoice = null) => {
+  // Synthesize and play audio using Sarvam AI Neural TTS or Web Speech API
+  const playCloudTTS = async (text, msgId = null, overrideVoice = null, overrideEmotion = null) => {
     stopAllAudio();
     if (msgId) setSpeakingMessageId(msgId);
     setIsCloudLoading(true);
 
-    const isLegacyHinglish = selectedVoiceName === 'ultra-realistic-hinglish';
-    let voiceId = 'Sarah';
-    let provider = 'inworld';
+    const candidate = (overrideVoice || selectedVoiceName || localStorage.getItem('active_voice_model') || '').toLowerCase();
+    const voiceId = candidate.includes('shubh') ? 'shubh' : 'ritu';
 
-    if (overrideVoice) {
-      voiceId = overrideVoice;
-    } else if (selectedVoiceName.startsWith('inworld-')) {
-      voiceId = selectedVoiceName.replace('inworld-', '');
-      provider = 'inworld';
-    } else if (isLegacyHinglish) {
-      provider = 'cartesia';
+    // If default browser voice is active or selected, use browser native speech
+    if (candidate === 'default-browser') {
+      setIsCloudLoading(false);
+      if (ttsSupported) {
+        speak(text, {
+          voice: activeVoiceObj,
+          rate: speechSpeed,
+          pitch: speechPitch
+        });
+      }
+      return;
     }
 
-    // --- Step 1: Fetch audio from backend (network errors caught separately) ---
+    // --- Step 1: Fetch audio from backend with emotion & tone parameters ---
     let res;
     try {
       res = await fetch('/tts', {
@@ -434,15 +469,23 @@ export default function WorkspacePage({
         body: JSON.stringify({ 
           text, 
           voice_id: voiceId,
-          provider: provider,
-          model: isLegacyHinglish ? 'ultra-realistic-hinglish' : 'inworld-tts-2' 
+          speaker: voiceId,
+          target_language_code: 'hi-IN',
+          model: 'bulbul:v3',
+          pace: speechSpeed,
+          temperature: emotionExpressiveness,
+          speech_sample_rate: 24000,
+          emotion: overrideEmotion || selectedEmotion,
+          provider: 'sarvam'
         })
       });
     } catch (networkErr) {
       console.error('TTS network error:', networkErr);
-      alert('Could not connect to TTS service. Make sure backend is running.');
+      // Fallback to browser voice if backend is not answering
       setIsCloudLoading(false);
-      setSpeakingMessageId(null);
+      if (ttsSupported) {
+        speak(text, { voice: activeVoiceObj, rate: speechSpeed, pitch: speechPitch });
+      }
       return;
     }
 
@@ -452,10 +495,27 @@ export default function WorkspacePage({
         const errData = await res.json();
         errDetail = errData.detail || errDetail;
       } catch (e) {}
-      alert(`Voice Studio Notice:\n\n${errDetail}`);
+      console.warn(`Voice Studio Notice: ${errDetail}, falling back to browser speech.`);
       setIsCloudLoading(false);
-      setSpeakingMessageId(null);
+      if (ttsSupported) {
+        speak(text, { voice: activeVoiceObj, rate: speechSpeed, pitch: speechPitch });
+      }
       return;
+    }
+
+    // Check if backend returned instruction to use browser speech
+    const contentType = res.headers.get('content-type') || '';
+    if (contentType.includes('application/json')) {
+      try {
+        const jsonData = await res.json();
+        if (jsonData.status === 'use_browser_speech') {
+          setIsCloudLoading(false);
+          if (ttsSupported) {
+            speak(text, { voice: activeVoiceObj, rate: speechSpeed, pitch: speechPitch });
+          }
+          return;
+        }
+      } catch (e) {}
     }
 
     // --- Step 2: Play the audio blob (autoplay block caught separately) ---
@@ -504,6 +564,7 @@ export default function WorkspacePage({
     }
     stopAllAudio();
     setActiveFile(null);
+    sessionFileRef.current = null;
     setPrompt('');
     setCurrentSessionId(Date.now().toString());
     setMessages([]);
@@ -520,11 +581,9 @@ export default function WorkspacePage({
       return;
     }
 
-    // Inworld & Ultra-Realistic Cloud routing
-    if (selectedVoiceName.startsWith('inworld-') || selectedVoiceName === 'ultra-realistic-hinglish') {
-      playCloudTTS(text, msgId);
-      return;
-    }
+    // Sarvam Studio Voice routing (Priya or Shubh)
+    playCloudTTS(text, msgId);
+    return;
 
     if (!ttsSupported) {
       alert("Text-to-speech is not supported in this browser.");
@@ -572,6 +631,11 @@ export default function WorkspacePage({
       return;
     }
 
+    // Retain attached file reference across multi-turn conversation
+    if (attachedFile?.fileObj) {
+      sessionFileRef.current = attachedFile.fileObj;
+    }
+
     setIsAnalyzing(true);
     setAnalysisStatus(attachedFile ? `Analyzing file "${attachedFile.name}"...` : "Generating response...");
     stopAllAudio();
@@ -593,7 +657,7 @@ export default function WorkspacePage({
     const currentMessages = [...messages, userMessage];
     setMessages(currentMessages);
     
-    // Clear attachment state
+    // Clear composer attachment state
     setActiveFile(null);
 
     // Add temporary typing indicator bot message
@@ -601,14 +665,26 @@ export default function WorkspacePage({
     setMessages(prev => [...prev, { id: typingMsgId, role: 'bot', typing: true }]);
 
     try {
-      const fileObj = attachedFile ? attachedFile.fileObj : null;
-      const result = await analyzeFile(trimmedPrompt, fileObj, messages, displayName);
+      const fileObj = attachedFile ? attachedFile.fileObj : sessionFileRef.current;
+      const result = await analyzeFile(
+        trimmedPrompt,
+        fileObj,
+        messages,
+        displayName,
+        selectedVoiceName,
+        selectedEmotion
+      );
       
       const botMsgId = (Date.now() + 2).toString();
       const botReply = {
         id: botMsgId,
         role: 'bot',
         text: result.answer,
+        accuracy: result.accuracy,
+        confidence: result.confidence,
+        latency_s: result.pipeline_latency_s,
+        audio_url: result.audio_url || null,
+        audio_filename: result.audio_filename || null,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       };
 
@@ -620,16 +696,7 @@ export default function WorkspacePage({
       syncToDatabase(finalMessages);
 
       if (autoSpeak) {
-        if (selectedVoiceName.startsWith('inworld-') || selectedVoiceName === 'ultra-realistic-hinglish') {
-          playCloudTTS(result.answer, botMsgId);
-        } else if (ttsSupported) {
-          setSpeakingMessageId(botMsgId);
-          speak(result.answer, {
-            voice: activeVoiceObj,
-            rate: speechSpeed,
-            pitch: speechPitch
-          });
-        }
+        playCloudTTS(result.answer, botMsgId);
       }
     } catch (error) {
       console.error('API submission error:', error);
@@ -771,6 +838,14 @@ export default function WorkspacePage({
           setSelectedVoiceName(val);
           localStorage.setItem('active_voice_model', val);
         }}
+        selectedEmotion={selectedEmotion}
+        onSelectEmotion={(emoId) => {
+          setSelectedEmotion(emoId);
+          localStorage.setItem('active_voice_emotion', emoId);
+        }}
+        emotionsList={sarvamEmotions}
+        emotionExpressiveness={emotionExpressiveness}
+        setEmotionExpressiveness={setEmotionExpressiveness}
         speechSpeed={speechSpeed}
         setSpeechSpeed={setSpeechSpeed}
         speechPitch={speechPitch}
@@ -781,28 +856,12 @@ export default function WorkspacePage({
         isPaused={isPaused}
         ttsSupported={ttsSupported}
         voices={voices}
-        inworldVoiceList={inworldVoiceList}
-        customVoices={customVoices}
-        setCustomVoices={setCustomVoices}
-        newVoiceInput={newVoiceInput}
-        setNewVoiceInput={setNewVoiceInput}
+        sarvamVoiceList={sarvamVoiceList}
         onPlayPreview={() => {
-          if (selectedVoiceName.startsWith('inworld-') || selectedVoiceName === 'ultra-realistic-hinglish') {
-            const cleanName = selectedVoiceName.replace('inworld-', '');
-            let previewText = `Hello! This is ${cleanName} from Inworld AI. Voice synthesis is working smoothly in your project!`;
-            if (cleanName === 'Anjali') {
-              previewText = "Namaste! This is Anjali from Inworld AI. Voice synthesis is working smoothly in your project!";
-            } else if (selectedVoiceName === 'ultra-realistic-hinglish') {
-              previewText = "नमस्ते! यह अल्ट्रा-रियलिस्टिक हिंग्लिश वॉइस मॉडल का टेस्ट प्रिव्यू है। Voice Studio is working smoothly!";
-            }
-            playCloudTTS(previewText);
-          } else if (ttsSupported) {
-            speak("Hello! This is a voice studio test preview.", {
-              voice: activeVoiceObj,
-              rate: speechSpeed,
-              pitch: speechPitch
-            });
-          }
+          const cleanName = selectedVoiceName.replace('sarvam-', '').toLowerCase();
+          const speakerName = cleanName.includes('shubh') ? 'Shubh' : 'Ritu';
+          const previewText = `Namaste! I am ${speakerName}. This is an audio preview using the ${speakerName} voice model.`;
+          playCloudTTS(previewText, null, cleanName.includes('shubh') ? 'shubh' : 'ritu');
         }}
         onPlayResume={handlePlayActiveResponse}
         onPause={() => {

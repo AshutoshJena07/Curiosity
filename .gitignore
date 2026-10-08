@@ -32,11 +32,13 @@ dist/
 data/raw/*
 data/processed/*
 data/cache/*
+data/generated_audio/*
 *.pt
 *.pth
 !data/raw/.gitkeep
 !data/processed/.gitkeep
 !data/cache/.gitkeep
+!data/generated_audio/.gitkeep
 !models/.gitkeep
 
 # Application output & logs

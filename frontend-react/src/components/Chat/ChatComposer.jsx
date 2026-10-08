@@ -88,13 +88,30 @@ export default function ChatComposer({
     }
   };
 
+  const handlePaste = (e) => {
+    const items = (e.clipboardData || window.clipboardData)?.items;
+    if (!items) return;
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.type && item.type.startsWith('image/')) {
+        const file = item.getAsFile();
+        if (file) {
+          e.preventDefault();
+          if (onAttachFile) {
+            onAttachFile(file);
+          }
+          return;
+        }
+      }
+    }
+  };
+
   const handleKeyDown = (e) => {
     if ((e.key === 'Enter' || e.keyCode === 13) && !e.shiftKey) {
+      if (e.isComposing || e.nativeEvent?.isComposing) return;
       e.preventDefault();
       e.stopPropagation();
-      if (!isAnalyzing) {
-        handleSend();
-      }
+      handleSend();
     }
   };
 
@@ -129,6 +146,7 @@ export default function ChatComposer({
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
             onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
             disabled={isAnalyzing}
             aria-label="User message query input"
           />

@@ -15,7 +15,10 @@ export const SUPPORTED_EXTENSIONS = [
   'txt', 'json', 'md', 'py', 'js', 'ts'
 ];
 
-export function validateFileExtension(filename) {
+export function validateFileExtension(filename, mimeType = '') {
+  if (mimeType && (mimeType.startsWith('image/') || mimeType.startsWith('video/'))) {
+    return true;
+  }
   if (!filename) return false;
   const parts = filename.split('.');
   if (parts.length <= 1) return false;

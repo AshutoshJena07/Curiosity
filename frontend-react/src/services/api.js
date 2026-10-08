@@ -14,7 +14,7 @@ export async function checkHealth() {
   }
 }
 
-export async function analyzeFile(prompt, fileObj, history = [], userName = '') {
+export async function analyzeFile(prompt, fileObj, history = [], userName = '', preferredVoice = '', preferredEmotion = '') {
   const data = new FormData();
   
   if (fileObj) {
@@ -25,6 +25,15 @@ export async function analyzeFile(prompt, fileObj, history = [], userName = '') 
   
   data.append('prompt', prompt || 'Analyze this file and summarize its key content and details.');
   
+  // Forward preferred voice (strictly resolves to 'shubh' or 'ritu')
+  const voiceRaw = (preferredVoice || localStorage.getItem('active_voice_model') || 'ritu').toLowerCase();
+  const effectiveVoice = voiceRaw.includes('shubh') ? 'shubh' : 'ritu';
+  data.append('voice', effectiveVoice);
+
+  // Forward preferred emotion
+  const emotionRaw = (preferredEmotion || localStorage.getItem('active_voice_emotion') || 'neutral').toLowerCase();
+  data.append('emotion', emotionRaw);
+
   // Forward preferred user display name for personalized interactions
   const savedName = localStorage.getItem('user_name') || '';
   const effectiveName = (userName || savedName || '').trim();

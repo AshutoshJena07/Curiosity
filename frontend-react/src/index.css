@@ -2627,18 +2627,19 @@ button {
   pointer-events: none;
 }
 
-.voice-studio-card {
+.voice-studio-card,
+.vs-panel-container {
   position: fixed;
   top: 56px;
   right: 18px;
-  width: 335px;
+  width: 335px !important;
   max-width: calc(100vw - 36px);
   max-height: calc(100vh - 72px);
   overflow-y: auto;
   overflow-x: hidden;
   pointer-events: auto;
   z-index: 125;
-  background: rgba(10, 12, 18, 0.55);
+  background: rgba(10, 12, 18, 0.78);
   backdrop-filter: blur(35px) saturate(190%);
   -webkit-backdrop-filter: blur(35px) saturate(190%);
   border: 1px solid rgba(255, 255, 255, 0.12);
@@ -2650,13 +2651,15 @@ button {
   display: flex;
   flex-direction: column;
   gap: 14px;
+  box-sizing: border-box;
   animation: vs-card-pop 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
   will-change: transform, opacity;
   scrollbar-width: thin;
   scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
 }
 
-.voice-studio-card.is-dragging {
+.voice-studio-card.is-dragging,
+.vs-panel-container.is-dragging {
   box-shadow: 
     0 32px 75px -10px rgba(0, 0, 0, 0.9),
     0 0 0 1px rgba(255, 255, 255, 0.2) !important;
@@ -2676,7 +2679,8 @@ button {
 }
 
 /* Header */
-.vs-header {
+.vs-header,
+.vs-panel-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -2687,7 +2691,9 @@ button {
   touch-action: none;
 }
 
-.vs-header:active {
+.vs-header:active,
+.vs-panel-header:active,
+.vs-panel-header.grabbing {
   cursor: grabbing;
 }
 
@@ -2702,18 +2708,21 @@ button {
   transition: opacity 0.15s ease;
 }
 
-.vs-header:hover .vs-drag-grip {
+.vs-header:hover .vs-drag-grip,
+.vs-panel-header:hover .vs-drag-grip {
   opacity: 0.8;
   color: #ffffff;
 }
 
-.vs-header-title-wrap {
+.vs-header-title-wrap,
+.vs-header-left {
   display: flex;
   align-items: center;
   gap: 10px;
 }
 
-.vs-icon-badge {
+.vs-icon-badge,
+.vs-header-icon-badge {
   width: 28px;
   height: 28px;
   border-radius: 8px;
@@ -2811,7 +2820,8 @@ button {
   color: var(--text-muted);
 }
 
-.vs-pill-tag {
+.vs-pill-tag,
+.vs-badge-live {
   font-size: 9.5px;
   font-weight: 600;
   padding: 2px 7px;
@@ -2819,6 +2829,84 @@ button {
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.12);
   color: rgba(255, 255, 255, 0.9);
+}
+
+/* Emotion Selector Grid & Chips */
+.vs-emotion-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 5px;
+  max-height: 145px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 2px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+}
+
+.vs-emotion-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 10.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.14s cubic-bezier(0.16, 1, 0.3, 1);
+  text-align: left;
+  outline: none;
+}
+
+.vs-emotion-chip:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+  transform: translateY(-1px);
+}
+
+.vs-emotion-chip.active {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.08));
+  border-color: rgba(255, 255, 255, 0.38);
+  color: #ffffff;
+  box-shadow: 0 0 12px rgba(255, 255, 255, 0.08);
+  font-weight: 600;
+}
+
+.vs-emo-emoji {
+  font-size: 13px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.vs-emo-name {
+  font-size: 10.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.vs-emotion-desc-box {
+  padding: 6px 9px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  margin-top: 2px;
+}
+
+.vs-emotion-desc-text {
+  font-size: 9.5px;
+  color: rgba(255, 255, 255, 0.65);
+  line-height: 1.35;
+  display: block;
+}
+
+.vs-emotion-desc-text strong {
+  color: #ffffff;
+  font-weight: 600;
 }
 
 /* Custom High-Hz Animated Voice Dropdown */
@@ -3332,12 +3420,14 @@ button {
   to { transform: rotate(360deg); }
 }
 
-.vs-controls-row {
+.vs-controls-row,
+.vs-playback-controls {
   display: flex;
   gap: 6px;
 }
 
-.vs-control-btn {
+.vs-control-btn,
+.vs-ctrl-btn {
   flex: 1;
   padding: 5px 0;
   border-radius: 8px;

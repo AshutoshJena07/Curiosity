@@ -8,43 +8,32 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import logging
 import os
 import re
 import secrets
 import sqlite3
 import struct
-import threading
-import warnings
-from datetime import datetime, timedelta
-from io import BytesIO
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
 
 import requests
-import torch
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
-from PIL import Image
 from pydantic import BaseModel
 
-from src.curiosity_core.deep_learning_pipeline import get_dl_pipeline
-from src.curiosity_core.engine import CuriosityEngine
+from src.curiosity import CuriosityEngine
+
+# Setup logger
+logger = logging.getLogger("curiosity.api")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 
 # Load .env file
 load_dotenv()
-
-# Suppress harmless internal PyTorch / EasyOCR deprecation warnings
-warnings.filterwarnings("ignore", category=UserWarning)
-warnings.filterwarnings("ignore", category=DeprecationWarning)
-
-# Maximize CPU parallelism across all available cores for fast inference
-if hasattr(torch, "set_num_threads"):
-    try:
-        torch.set_num_threads(os.cpu_count() or 8)
-    except Exception:
-        pass
 
 # =====================================================================
 # SUPABASE CLOUD CONFIGURATION & SYNC
@@ -179,8 +168,15 @@ def get_current_user(authorization: str = Header(None)) -> int:
     if not row:
         raise HTTPException(status_code=401, detail="Session expired or invalid token.")
 
-    expires_at = datetime.fromisoformat(row["expires_at"])
-    if expires_at < datetime.utcnow():
+    try:
+        raw_exp = row["expires_at"]
+        expires_at = datetime.fromisoformat(raw_exp)
+        now = datetime.now(expires_at.tzinfo) if expires_at.tzinfo else datetime.utcnow()
+        is_expired = expires_at < now
+    except Exception:
+        is_expired = False
+
+    if is_expired:
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("DELETE FROM sessions WHERE token = ?", (token,))
@@ -228,6 +224,15 @@ app = FastAPI(
     version="2.0.0",
 )
 
+# Enable CORS for frontend and cross-origin requests
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 FRONTEND_DIR = Path(__file__).resolve().parents[2] / "frontend"
 if FRONTEND_DIR.exists():
     app.mount("/assets", StaticFiles(directory=FRONTEND_DIR), name="assets")
@@ -237,64 +242,62 @@ if FRONTEND_DIR.exists():
         app.mount("/vendor", StaticFiles(directory=vendor_dir), name="vendor")
 
 
+AUDIO_DIR = Path(__file__).resolve().parents[2] / "data" / "generated_audio"
+AUDIO_DIR.mkdir(parents=True, exist_ok=True)
+app.mount("/generated_audio", StaticFiles(directory=AUDIO_DIR), name="generated_audio")
+
+
+@app.get("/api/v1/audio/{filename}")
+@app.get("/audio/generated/{filename}")
+async def serve_generated_audio(filename: str):
+    file_path = AUDIO_DIR / filename
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Audio file not found.")
+    return FileResponse(file_path, media_type="audio/mpeg", filename=filename)
+
+
 @app.get("/", include_in_schema=False)
-def homepage() -> FileResponse:
+def homepage() -> Response:
     """Serve the local browser interface."""
-    return FileResponse(FRONTEND_DIR / "index.html")
+    index_path = FRONTEND_DIR / "index.html"
+    if index_path.exists():
+        return FileResponse(index_path)
+    return Response(content="Curiosity AI Pipeline running. Build frontend to access UI.", media_type="text/plain")
 
 
 @app.get("/favicon.svg", include_in_schema=False)
 @app.get("/favicon.png", include_in_schema=False)
 @app.get("/favicon.ico", include_in_schema=False)
-def favicon() -> FileResponse:
+def favicon() -> Response:
     """Serve the custom mascot favicon."""
     svg_path = FRONTEND_DIR / "favicon.svg"
     if svg_path.exists():
         return FileResponse(svg_path)
-    return FileResponse(FRONTEND_DIR / "favicon.png")
+    png_path = FRONTEND_DIR / "favicon.png"
+    if png_path.exists():
+        return FileResponse(png_path)
+    return Response(status_code=204)
 
 
 @app.on_event("startup")
 async def startup_event():
-    """Initialize database tables and pre-warm AI models in background for fast inference."""
+    """Initialize database tables."""
     init_db()
-
-    def warm_up():
-        print("[Startup] Pre-warming Deep Learning models (YOLOv8, ResNet-50 ImageNet)...")
-        try:
-            pipeline = get_dl_pipeline()
-            pipeline.resnet_classifier._load_model()
-            pipeline.yolo_detector._load_model()
-            print("[Startup] YOLO & ResNet-50 ImageNet loaded successfully into RAM.")
-
-            # Pre-warm local Ollama Qwen model into memory
-            try:
-                requests.post(
-                    "http://127.0.0.1:11434/api/chat",
-                    json={
-                        "model": "qwen2.5:1.5b",
-                        "messages": [{"role": "user", "content": "warmup"}],
-                        "keep_alive": -1,
-                        "options": {"num_predict": 1},
-                    },
-                    timeout=10,
-                )
-                print("[Startup] Local Qwen LLM pre-warmed in memory.")
-            except Exception:
-                pass
-        except Exception as exc:
-            print(f"[Startup Notice] Preload note: {exc}")
-
-    threading.Thread(target=warm_up, daemon=True).start()
 
 
 # =====================================================================
-# CORE ANALYSIS & DEEP LEARNING ENDPOINTS
+# CORE ANALYSIS ENDPOINT (PLACEHOLDER - LOGIC TO BE REBUILT)
 # =====================================================================
 
 @app.get("/health")
 def health() -> dict[str, str]:
-    return {"status": "ok", "model": "CuriosityCore active"}
+    return {
+        "status": "ok",
+        "model": "Curiosity-YOLO11-EasyOCR-ResNet50",
+        "yolo": "yolo11n",
+        "ocr": "EasyOCR",
+        "pdf": "PyMuPDF"
+    }
 
 
 @app.post("/analyze")
@@ -304,513 +307,327 @@ async def analyze_media(
     prompt: str = Form(DEFAULT_PROMPT, description="Question or instruction about the uploaded file"),
     history: str = Form("[]", description="Recent chat turns supplied by the frontend"),
     user_name: Optional[str] = Form(None, description="Current user preferred display name"),
+    voice: Optional[str] = Form(None, description="Preferred neural voice (ritu or shubh)"),
+    emotion: Optional[str] = Form(None, description="Preferred emotion preset"),
     authorization: Optional[str] = Header(None, description="Bearer session token"),
 ) -> dict[str, Any]:
-    """Execute the 3-stage Curiosity Core pipeline on the uploaded media and user prompt."""
+    """Execute end-to-end multimodal analysis using Curiosity 8-Layer Architecture."""
     target_upload = file or image
-
-    # Resolve user name if session token is provided
-    resolved_name = (user_name or "").strip()
-    if not resolved_name and authorization:
-        try:
-            token = authorization.replace("Bearer ", "").strip()
-            conn = get_db_connection()
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT u.email FROM sessions s
-                JOIN users u ON s.user_id = u.id
-                WHERE s.token = ? AND datetime(s.expires_at) > datetime('now')
-            """, (token,))
-            row = cursor.fetchone()
-            conn.close()
-            if row and row["email"]:
-                resolved_name = row["email"].split("@")[0].replace(".", " ").title()
-        except Exception:
-            pass
-
     file_bytes = None
     filename = None
     content_type = None
 
-    if target_upload is not None:
-        file_bytes = await target_upload.read()
-        filename = target_upload.filename or "uploaded_media"
-        content_type = target_upload.content_type or ""
+    if target_upload:
+        try:
+            file_bytes = await target_upload.read()
+            filename = target_upload.filename
+            content_type = target_upload.content_type
+            if not file_bytes:
+                file_bytes = None
+                filename = None
+                content_type = None
+        except Exception as read_err:
+            logger.warning(f"Failed to read uploaded file: {read_err}")
+            file_bytes = None
 
-    try:
-        parsed_history = json.loads(history)
-        if not isinstance(parsed_history, list):
+    parsed_history = []
+    if history:
+        try:
+            parsed_history = json.loads(history)
+        except Exception:
             parsed_history = []
-        safe_history = [
-            {"role": str(turn.get("role", "user"))[:12], "content": str(turn.get("content", ""))[:600]}
-            for turn in parsed_history[-8:]
-            if isinstance(turn, dict)
-        ]
-    except json.JSONDecodeError:
-        safe_history = []
+
+    # Authenticate user if token provided
+    user_id = None
+    if authorization and authorization.startswith("Bearer "):
+        try:
+            user_id = get_current_user(authorization)
+        except Exception:
+            user_id = None
+
+    effective_user_id = str(user_id) if user_id else (f"user_{user_name.strip()}" if (user_name and user_name.strip()) else "guest_user")
 
     try:
-        engine_res = CuriosityEngine.execute(
+        result = CuriosityEngine.execute(
             file_bytes=file_bytes,
             filename=filename,
             content_type=content_type,
             prompt=prompt,
-            history=safe_history,
-            user_name=resolved_name or "Explorer",
-            user_id=resolved_name or "anonymous"
+            history=parsed_history,
+            user_name=user_name,
+            user_id=effective_user_id,
+            voice=voice,
+            emotion=emotion
         )
-        answer = engine_res.get("answer", "")
-        dl_metrics = engine_res.get("dl_metrics")
-        accuracy = engine_res.get("accuracy", 95.0)
+        return result
     except Exception as exc:
-        print(f"[CuriosityEngine Route Error] {exc}")
-        raise HTTPException(status_code=500, detail=f"Analysis pipeline error: {exc}") from exc
-
-    return {
-        "prompt": prompt,
-        "answer": answer,
-        "model": "Curiosity",
-        "dl_metrics": dl_metrics,
-        "accuracy": accuracy
-    }
-
-
-@app.post("/api/detect/yolo")
-async def detect_objects_yolo(
-    file: UploadFile = File(..., description="Image file for YOLO object detection"),
-    conf: float = Form(0.25, description="Confidence threshold"),
-) -> dict[str, Any]:
-    """Detect objects, bounding boxes, and counts in an image using YOLOv8."""
-    content = await file.read()
-    image = Image.open(BytesIO(content)).convert("RGB")
-    pipeline = get_dl_pipeline()
-    objects = pipeline.yolo_detector.detect(image, conf_threshold=conf)
-
-    counts = {}
-    for obj in objects:
-        counts[obj.label] = counts.get(obj.label, 0) + 1
-
-    return {
-        "model": "YOLOv8",
-        "total_objects": len(objects),
-        "counts": counts,
-        "detected_objects": [obj.to_dict() for obj in objects]
-    }
-
-
-@app.post("/api/classify/resnet")
-async def classify_resnet_imagenet(
-    file: UploadFile = File(..., description="Image file for ResNet-50 ImageNet classification"),
-    top_k: int = Form(5, description="Top-K categories"),
-) -> dict[str, Any]:
-    """Classify an image into ImageNet (ILSVRC-1000) categories using ResNet-50."""
-    content = await file.read()
-    image = Image.open(BytesIO(content)).convert("RGB")
-    pipeline = get_dl_pipeline()
-    predictions = pipeline.resnet_classifier.predict(image, top_k=top_k)
-
-    return {
-        "model": "ResNet-50",
-        "dataset": "ImageNet-1K",
-        "top_prediction": predictions[0].label if predictions else None,
-        "predictions": [p.to_dict() for p in predictions]
-    }
+        logger.exception(f"CuriosityEngine execution failed: {exc}")
+        raise HTTPException(status_code=500, detail=f"Pipeline error: {exc}")
 
 
 # =====================================================================
-# STUDIO VOICE & AUDIO SYNTHESIS CONFIGURATION
+# VOICE SYNTHESIS (SARVAM AI + DEFAULT BROWSER VOICES)
 # =====================================================================
 
-EMOTION_MAP = {
-    "happy": "happy",
-    "excited": "excited",
-    "joy": "happy",
-    "joyful": "happy",
-    "bright": "happy",
-    "sad": "sad",
-    "emotional": "sad",
-    "grief": "sad",
-    "sorrow": "sad",
-    "angry": "anger",
-    "anger": "anger",
-    "controlled": "calm",
-    "firm": "calm",
-    "irritated": "anger",
-    "calm": "calm",
-    "professional": "calm",
-    "reassuring": "calm",
-    "gentle": "calm",
-    "comforting": "calm",
-    "warm": "calm",
-    "fear": "fear",
-    "urgency": "fear",
-    "urgent": "fear",
-    "tense": "fear",
-    "worried": "fear",
-    "nervous": "fear",
-    "surprised": "surprise",
-    "surprise": "surprise",
-    "whisper": "whisper",
-    "secretive": "whisper",
-    "quiet": "whisper",
-    "sarcastic": "happy",
-    "playful": "happy",
-    "relieved": "calm",
-    "neutral": "neutral",
-}
+SARVAM_API_KEY = os.getenv("SARVAM_API_KEY", os.getenv("SARVAM_API_SUBSCRIPTION_KEY", "sk_ifnmvwzp_6GQ219edjduibgcIRX3QxiV2"))
+SARVAM_MODEL = os.getenv("SARVAM_MODEL", "bulbul:v3")
+SARVAM_TTS_URL = "https://api.sarvam.ai/text-to-speech"
 
-
-def parse_script_emotion_segments(full_text: str) -> list[tuple[str, str]]:
-    """Parse a script into (spoken_text, emotion_tag) segments.
-    Strips bracket tags, speaker names, markdown dividers, headers, and bullet points.
-    """
-    lines = full_text.splitlines()
-    segments = []
-    current_emotion = "neutral"
-
-    for line in lines:
-        raw = line.strip()
-        if not raw or raw == "[END]":
-            continue
-        if re.match(r"^[-=_*#]{2,}$", raw) or raw.startswith("#"):
-            continue
-
-        bracket_match = re.search(r"\[([A-Za-z0-9_\s\/\\-]+)\]", raw)
-        if bracket_match:
-            tag_text = bracket_match.group(1).lower()
-            found_emotion = None
-            for word in re.split(r"[\s\/\\-]+", tag_text):
-                if word in EMOTION_MAP:
-                    found_emotion = EMOTION_MAP[word]
-                    break
-            if found_emotion:
-                current_emotion = found_emotion
-
-            raw = re.sub(r"\[([A-Za-z0-9_\s\/\\-]+)\]", "", raw).strip()
-            if not raw:
-                continue
-
-        spoken = re.sub(r"^[A-Za-z0-9_\s]+\s*(\([^)]*\))?\s*:\s*", "", raw)
-        spoken = re.sub(r"\*?\([^)]*\)\*?", "", spoken)
-        spoken = re.sub(r"^[-*•\d+\.]+\s+", "", spoken)
-        spoken = re.sub(r"[*_~#`>|]+", "", spoken)
-        spoken = re.sub(r"-{2,}", " ", spoken).strip()
-        spoken = re.sub(r"\s*:\s*", ", ", spoken)
-
-        if spoken and len(spoken) > 1 and not re.match(r"^[-=_\s]+$", spoken):
-            segments.append((spoken, current_emotion))
-
-    if not segments:
-        clean_fallback = re.sub(r"\[([A-Za-z0-9_\s\/\\-]+)\]", "", full_text)
-        clean_fallback = re.sub(r"^[A-Za-z0-9_\s]+\s*(\([^)]*\))?\s*:\s*", "", clean_fallback, flags=re.MULTILINE)
-        clean_fallback = re.sub(r"\*?\([^)]*\)\*?", "", clean_fallback)
-        clean_fallback = re.sub(r"^[-*•\d+\.]+\s+", "", clean_fallback, flags=re.MULTILINE)
-        clean_fallback = re.sub(r"[*_~#`>|-]+", " ", clean_fallback)
-        clean_fallback = re.sub(r"\s+", " ", clean_fallback).strip()
-        if clean_fallback:
-            segments.append((clean_fallback, "neutral"))
-
-    return segments
-
-
-def combine_wav_audio_chunks(wav_chunks: list[bytes]) -> bytes:
-    """Concatenate PCM WAV audio chunks into a single valid WAV file."""
-    valid_chunks = [c for c in wav_chunks if len(c) > 44]
-    if not valid_chunks:
-        return b""
-    if len(valid_chunks) == 1:
-        return valid_chunks[0]
-
-    combined_pcm = bytearray()
-    first_header = bytearray(valid_chunks[0][:44])
-
-    for chunk in valid_chunks:
-        combined_pcm.extend(chunk[44:])
-
-    total_data_len = len(combined_pcm)
-    total_file_len = total_data_len + 36
-
-    first_header[4:8] = struct.pack("<I", total_file_len)
-    first_header[40:44] = struct.pack("<I", total_data_len)
-
-    return bytes(first_header + combined_pcm)
-
-
-INWORLD_TTS_CONFIG = {
-    "auth_token": os.getenv("INWORLD_TTS_AUTH", ""),
-    "model_id": "inworld-tts-2",
-    "delivery_mode": "BALANCED",
-    "default_voice_id": "Sarah"
-}
-
-INWORLD_VOICES = [
-    {"id": "Sarah", "name": "Sarah", "displayName": "Sarah (Inworld Studio Female)", "lang": "en-US", "description": "Expressive natural studio female voice"},
-    {"id": "Anjali", "name": "Anjali", "displayName": "Anjali (Inworld Indian Female)", "lang": "en-IN", "description": "Confident and articulate Indian English voice"},
-    {"id": "Vincent", "name": "Vincent", "displayName": "Vincent (Inworld Classy Male)", "lang": "en-US", "description": "Polished, classy male voice with smooth delivery"},
-    {"id": "Ashley", "name": "Ashley", "displayName": "Ashley (Inworld Warm Female)", "lang": "en-US", "description": "Warm, mellow and conversational female voice"},
-    {"id": "Carter", "name": "Carter", "displayName": "Carter (Inworld Announcer Male)", "lang": "en-US", "description": "Energetic radio announcer style male voice"},
+SARVAM_VOICES = [
+    {
+        "id": "ritu",
+        "name": "ritu",
+        "displayName": "Ritu (Female)",
+        "lang": "hi-IN / en-IN",
+        "description": "Expressive and lively female voice"
+    },
+    {
+        "id": "shubh",
+        "name": "shubh",
+        "displayName": "Shubh (Male)",
+        "lang": "hi-IN / en-IN",
+        "description": "Articulate and natural male voice"
+    }
 ]
 
 
-def synthesize_inworld_tts(text: str, voice_id: str = "Sarah") -> bytes:
-    """Synthesize speech using Inworld AI streaming TTS API into MP3 audio bytes."""
-    auth_token = INWORLD_TTS_CONFIG.get("auth_token") or ""
-    url = "https://api.inworld.ai/tts/v1/voice:stream"
-    headers = {
-        "Authorization": auth_token,
-        "Content-Type": "application/json",
+SARVAM_EMOTIONS = [
+    {
+        "id": "neutral",
+        "label": "Natural & Balanced",
+        "emoji": "🌟",
+        "description": "Balanced, conversational everyday speech",
+        "temperature": 0.60,
+        "pace_multiplier": 1.00
+    },
+    {
+        "id": "cheerful",
+        "label": "Happy & Cheerful",
+        "emoji": "😊",
+        "description": "Joyful, warm, smiling tone with enthusiastic cadence",
+        "temperature": 0.85,
+        "pace_multiplier": 1.05
+    },
+    {
+        "id": "excited",
+        "label": "Excited & Vibrant",
+        "emoji": "🤩",
+        "description": "High-energy, celebratory and animated inflection",
+        "temperature": 0.95,
+        "pace_multiplier": 1.12
+    },
+    {
+        "id": "calm",
+        "label": "Calm & Gentle",
+        "emoji": "😌",
+        "description": "Soothing, gentle pauses and relaxed intonation",
+        "temperature": 0.50,
+        "pace_multiplier": 0.90
+    },
+    {
+        "id": "empathetic",
+        "label": "Empathetic & Caring",
+        "emoji": "🥺",
+        "description": "Compassionate, comforting and heartfelt voice",
+        "temperature": 0.65,
+        "pace_multiplier": 0.92
+    },
+    {
+        "id": "dramatic",
+        "label": "Dramatic & Storyteller",
+        "emoji": "🎭",
+        "description": "Theatrical narrative, expressive pitch dynamics and pauses",
+        "temperature": 0.92,
+        "pace_multiplier": 0.96
+    },
+    {
+        "id": "professional",
+        "label": "Formal & Professional",
+        "emoji": "💼",
+        "description": "Crisp, authoritative, boardroom-level clarity",
+        "temperature": 0.35,
+        "pace_multiplier": 1.00
+    },
+    {
+        "id": "urgent",
+        "label": "Urgent & High-Energy",
+        "emoji": "⚡",
+        "description": "Fast-paced, prompt, alert and compelling delivery",
+        "temperature": 0.80,
+        "pace_multiplier": 1.18
+    },
+    {
+        "id": "somber",
+        "label": "Somber & Reflective",
+        "emoji": "😔",
+        "description": "Deep, reflective cadence with melancholic pauses",
+        "temperature": 0.45,
+        "pace_multiplier": 0.85
+    },
+    {
+        "id": "curious",
+        "label": "Curious & Inquisitive",
+        "emoji": "🧐",
+        "description": "Engaged, questioning tone with lively vocal lift",
+        "temperature": 0.78,
+        "pace_multiplier": 1.02
     }
+]
 
-    clean_voice_id = voice_id.replace("inworld-", "").strip() if voice_id else "Sarah"
-    if not clean_voice_id:
-        clean_voice_id = "Sarah"
-
-    payload = {
-        "text": text,
-        "voice_id": clean_voice_id,
-        "audio_config": {"audio_encoding": "MP3"},
-        "delivery_mode": INWORLD_TTS_CONFIG.get("delivery_mode", "BALANCED"),
-        "model_id": INWORLD_TTS_CONFIG.get("model_id", "inworld-tts-2")
-    }
-
-    try:
-        res = requests.post(url, headers=headers, json=payload, stream=True, timeout=35)
-        if res.status_code != 200:
-            raise HTTPException(status_code=res.status_code, detail=f"Inworld TTS API error ({res.status_code}): {res.text}")
-
-        audio_chunks = []
-        for line in res.iter_lines():
-            if line:
-                try:
-                    data = json.loads(line)
-                    b64_audio = data.get("result", {}).get("audioContent", "")
-                    if b64_audio:
-                        audio_chunks.append(base64.b64decode(b64_audio))
-                except Exception:
-                    continue
-
-        if not audio_chunks:
-            raise HTTPException(status_code=502, detail="No audio stream returned from Inworld TTS.")
-
-        return b"".join(audio_chunks)
-    except HTTPException:
-        raise
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Inworld TTS request failed: {exc}")
-
-
-HINGLISH_TTS_CONFIG = {
-    "api_key": os.getenv("HINGLISH_TTS_API_KEY", os.getenv("CARTESIA_API_KEY", "")),
-    "provider": "inworld",
-    "model_id": "sonic-3.6",
-    "voice_id": "4459a9a5-69d6-4680-b970-e13dc51845b6",
-    "language": "hi",
-    "custom_url": ""
-}
+EMOTION_MAP = {e["id"]: e for e in SARVAM_EMOTIONS}
 
 
 @app.get("/tts/voices")
 @app.get("/api/v1/tts/voices")
 async def get_available_tts_voices():
-    """Returns available voice synthesis catalog."""
+    """Returns available voice synthesis catalog featuring strictly Ritu and Shubh with emotions."""
     return {
-        "provider": "inworld",
-        "default_voice": INWORLD_TTS_CONFIG.get("default_voice_id", "Sarah"),
-        "voices": INWORLD_VOICES
+        "provider": "sarvam",
+        "model": SARVAM_MODEL,
+        "default_voice": "ritu",
+        "default_emotion": "neutral",
+        "voices": SARVAM_VOICES,
+        "emotions": SARVAM_EMOTIONS
     }
+
+
+def _apply_emotion_prosody(text: str, emotion_id: str) -> str:
+    """Format and punctuate text to enhance emotional prosody inference in bulbul:v3."""
+    if not text:
+        return text
+    t = text.strip()
+    if emotion_id in ("cheerful", "excited"):
+        # Ensure energetic terminal punctuation
+        if t and t[-1] not in ".!?":
+            t += "!"
+    elif emotion_id in ("calm", "somber", "dramatic"):
+        # Replace abrupt commas with gentle pauses where suitable
+        t = re.sub(r',\s+', '... ', t)
+    return t
 
 
 @app.post("/tts")
 async def tts_endpoint(data: dict):
-    """Synthesize text into speech using Inworld AI or configured ultra-realistic audio models."""
+    """Synthesize text into speech using Sarvam AI bulbul:v3 (Ritu or Shubh) with emotion control."""
     text = (data.get("text") or "").strip()
-    explicit_emotion = (data.get("emotion") or "").strip().lower()
-
     if not text:
         raise HTTPException(status_code=400, detail="Text parameter cannot be empty.")
 
-    req_provider = (data.get("provider") or "").lower().strip()
-    req_voice = (data.get("voice_id") or data.get("voice") or "").strip()
-    req_model = (data.get("model") or "").strip()
+    req_voice = (data.get("voice_id") or data.get("voice") or "").strip().lower()
 
-    is_inworld = (
-        req_provider == "inworld"
-        or req_voice.startswith("inworld-")
-        or (not req_provider and req_model != "ultra-realistic-hinglish")
-        or (req_voice and req_model != "ultra-realistic-hinglish" and req_provider not in ("cartesia", "sarvam", "elevenlabs"))
-    )
+    # Clean voice identifier: strictly ritu or shubh
+    speaker = "shubh" if "shubh" in req_voice else "ritu"
 
-    if is_inworld:
-        voice_to_use = req_voice or INWORLD_TTS_CONFIG.get("default_voice_id", "Sarah")
-        audio_mp3 = synthesize_inworld_tts(text, voice_id=voice_to_use)
-        return Response(content=audio_mp3, media_type="audio/mpeg")
+    # Emotion handling
+    req_emotion = (data.get("emotion") or "neutral").strip().lower()
+    emotion_info = EMOTION_MAP.get(req_emotion, EMOTION_MAP["neutral"])
 
-    api_key = (HINGLISH_TTS_CONFIG.get("api_key") or "").strip()
-    provider = (HINGLISH_TTS_CONFIG.get("provider") or "cartesia").lower().strip()
-
-    if not api_key or api_key == "YOUR_API_KEY_HERE":
-        audio_mp3 = synthesize_inworld_tts(text, voice_id="Sarah")
-        return Response(content=audio_mp3, media_type="audio/mpeg")
-
-    def _detect_tts_language(t: str) -> str:
-        devanagari = re.findall(r'[\u0900-\u097F]', t)
-        words = t.split()
-        english_words = sum(1 for w in words if re.fullmatch(r'[a-zA-Z0-9\'\-.,!?]+', w))
-        ratio = english_words / max(len(words), 1)
-        if devanagari:
-            return "hi"
-        if ratio >= 0.90:
-            return "en"
-        return "hi"
-
-    # 1. Cartesia Provider
-    if provider == "cartesia":
-        headers = {
-            "X-API-Key": api_key,
-            "Cartesia-Version": "2026-08-14",
-            "Content-Type": "application/json"
-        }
-
-        segments = parse_script_emotion_segments(text[:4000])
-        wav_audio_chunks = []
-
-        for spoken_text, parsed_emotion in segments:
-            target_emotion = explicit_emotion or EMOTION_MAP.get(parsed_emotion, "neutral")
-            tts_language = _detect_tts_language(spoken_text)
-
-            payload = {
-                "model_id": HINGLISH_TTS_CONFIG.get("model_id") or "sonic-multilingual",
-                "transcript": spoken_text,
-                "voice": {
-                    "mode": "id",
-                    "id": HINGLISH_TTS_CONFIG.get("voice_id") or "faf0731e-dfb9-4cfc-8119-259a79b27e12"
-                },
-                "language": tts_language,
-                "output_format": {
-                    "container": "wav",
-                    "encoding": "pcm_s16le",
-                    "sample_rate": 44100
-                },
-                "generation_config": {
-                    "speed": 1.0,
-                    "volume": 1.0,
-                    "emotion": target_emotion
-                }
-            }
-
-            try:
-                res = requests.post("https://api.cartesia.ai/tts/bytes", headers=headers, json=payload, timeout=25)
-                if res.status_code == 200 and len(res.content) > 0:
-                    wav_audio_chunks.append(res.content)
-                elif res.status_code == 401:
-                    raise HTTPException(status_code=401, detail="Cartesia API Key is invalid or unauthorized.")
-                else:
-                    print(f"[Cartesia TTS Warning] Segment synthesis failed ({res.status_code}): {res.text}")
-            except HTTPException:
-                raise
-            except Exception as exc:
-                print(f"[Cartesia TTS Warning] Failed segment synthesis request: {exc}")
-
-        if wav_audio_chunks:
-            final_wav = combine_wav_audio_chunks(wav_audio_chunks)
-            return Response(content=final_wav, media_type="audio/wav")
-        else:
-            raise HTTPException(status_code=502, detail="Cartesia TTS synthesis failed. Check key validity and balance.")
-
-    # 2. Sarvam AI Provider
-    elif provider == "sarvam":
-        headers = {
-            "api-subscription-key": api_key,
-            "Content-Type": "application/json"
-        }
-        clean_text = text[:500].replace("*", "").strip()
-        payload = {
-            "inputs": [clean_text],
-            "target_language_code": HINGLISH_TTS_CONFIG.get("language") or "hi-IN",
-            "speaker": HINGLISH_TTS_CONFIG.get("voice_id") or "meera",
-            "model": HINGLISH_TTS_CONFIG.get("model_id") or "bulbul:v1",
-            "pace": 1.0,
-            "speech_sample_rate": 22050,
-            "enable_preprocessing": True
-        }
+    # Temperature calculation (randomness / expressiveness in bulbul:v3, 0.01 to 1.0)
+    user_temp = data.get("temperature")
+    if user_temp is not None:
         try:
-            res = requests.post("https://api.sarvam.ai/text-to-speech", headers=headers, json=payload, timeout=25)
-            if res.status_code == 200:
-                data = res.json()
-                audios = data.get("audios", [])
-                if audios:
-                    audio_bytes = base64.b64decode(audios[0])
-                    return Response(content=audio_bytes, media_type="audio/wav")
-            if res.status_code in (401, 403):
-                raise HTTPException(status_code=401, detail="Sarvam AI API key is invalid or unauthorized.")
-            raise HTTPException(status_code=res.status_code, detail=f"Sarvam AI error: {res.text}")
-        except HTTPException:
-            raise
-        except Exception as exc:
-            raise HTTPException(status_code=502, detail=f"Sarvam AI TTS request failed: {exc}")
-
-    # 3. ElevenLabs Provider
-    elif provider == "elevenlabs":
-        voice_id = HINGLISH_TTS_CONFIG.get("voice_id") or "21m00Tcm4TlvDq8ikWAM"
-        headers = {
-            "xi-api-key": api_key,
-            "Content-Type": "application/json"
-        }
-        payload = {
-            "text": text[:2000],
-            "model_id": HINGLISH_TTS_CONFIG.get("model_id") or "eleven_multilingual_v2",
-            "voice_settings": {"stability": 0.5, "similarity_boost": 0.8}
-        }
-        try:
-            res = requests.post(f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}", headers=headers, json=payload, timeout=30)
-            if res.status_code == 200 and len(res.content) > 0:
-                return Response(content=res.content, media_type="audio/mpeg")
-            if res.status_code in (401, 403):
-                raise HTTPException(status_code=401, detail="ElevenLabs API Key is invalid or unauthorized.")
-            raise HTTPException(status_code=res.status_code, detail=f"ElevenLabs error: {res.text}")
-        except HTTPException:
-            raise
-        except Exception as exc:
-            raise HTTPException(status_code=502, detail=f"ElevenLabs TTS request failed: {exc}")
-
-    # 4. Custom API Provider
+            temperature = float(user_temp)
+        except (ValueError, TypeError):
+            temperature = emotion_info["temperature"]
     else:
-        custom_url = HINGLISH_TTS_CONFIG.get("custom_url")
-        if not custom_url:
-            raise HTTPException(status_code=400, detail="Custom provider selected but 'custom_url' is not configured.")
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json"
-        }
-        payload = {
-            "text": text,
-            "voice": HINGLISH_TTS_CONFIG.get("voice_id"),
-            "language": HINGLISH_TTS_CONFIG.get("language")
-        }
+        temperature = emotion_info["temperature"]
+    temperature = max(0.01, min(1.0, temperature))
+
+    # Pace calculation (speed, 0.5 to 2.0 in bulbul:v3)
+    user_pace = data.get("pace") or data.get("speed")
+    if user_pace is not None:
         try:
-            res = requests.post(custom_url, headers=headers, json=payload, timeout=25)
-            if res.status_code == 200:
-                return Response(content=res.content, media_type=res.headers.get("content-type", "audio/wav"))
-            raise HTTPException(status_code=res.status_code, detail=f"Custom TTS error: {res.text}")
-        except HTTPException:
-            raise
-        except Exception as exc:
-            raise HTTPException(status_code=502, detail=f"Custom TTS request failed: {exc}")
+            base_pace = float(user_pace)
+        except (ValueError, TypeError):
+            base_pace = 1.0
+    else:
+        base_pace = 1.0
+    pace = max(0.5, min(2.0, round(base_pace * emotion_info.get("pace_multiplier", 1.0), 2)))
+
+    api_key = SARVAM_API_KEY
+    if not api_key:
+        return {"status": "error", "message": "Sarvam API key not configured."}
+
+    clean_text = re.sub(r'[*_~#`>|]+', ' ', text)
+    clean_text = re.sub(r'-{2,}', ' ', clean_text)
+    clean_text = re.sub(r'\s+', ' ', clean_text).strip()[:1000]
+
+    # Apply emotion prosodic conditioning
+    clean_text = _apply_emotion_prosody(clean_text, req_emotion)
+
+    # Use explicit target_language_code if provided, default strictly to "hi-IN"
+    target_lang = (data.get("target_language_code") or data.get("language_code") or "hi-IN").strip()
+    if not target_lang:
+        target_lang = "hi-IN"
+
+    # 1. Attempt synthesis via official SarvamAI bulbul:v3 SDK
+    try:
+        from sarvamai import SarvamAI
+        client = SarvamAI(api_subscription_key=api_key)
+        stream = client.text_to_speech.convert_stream(
+            text=clean_text,
+            language_code=target_lang,
+            speaker=speaker,
+            model="bulbul:v3",
+            pace=pace,
+            temperature=temperature,
+            speech_sample_rate=24000,
+            output_audio_codec="mp3"
+        )
+        audio_bytes = b"".join(stream)
+        if audio_bytes and len(audio_bytes) > 100:
+            return Response(content=audio_bytes, media_type="audio/mpeg")
+    except Exception as sdk_err:
+        logger.warning(f"Sarvam AI SDK bulbul:v3 stream failed: {sdk_err}, falling back to REST endpoint...")
+
+    # 2. Resilient fallback via Sarvam AI REST API
+    headers = {
+        "api-subscription-key": api_key,
+        "Content-Type": "application/json"
+    }
+
+    payload = {
+        "inputs": [clean_text],
+        "target_language_code": target_lang,
+        "speaker": speaker,
+        "model": "bulbul:v3",
+        "pace": pace,
+        "temperature": temperature,
+        "speech_sample_rate": 24000,
+        "enable_preprocessing": True
+    }
+
+    try:
+        res = requests.post(SARVAM_TTS_URL, headers=headers, json=payload, timeout=25)
+        if res.status_code == 200:
+            res_data = res.json()
+            audios = res_data.get("audios", [])
+            if audios and len(audios[0]) > 0:
+                audio_bytes = base64.b64decode(audios[0])
+                return Response(content=audio_bytes, media_type="audio/wav")
+        if res.status_code in (401, 403):
+            raise HTTPException(status_code=401, detail="Sarvam AI API key is invalid or unauthorized.")
+        raise HTTPException(status_code=res.status_code, detail=f"Sarvam AI TTS error: {res.text}")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Sarvam AI TTS request failed: {exc}")
+
 
 
 @app.post("/api/v1/speech/synthesize")
 async def synthesize_speech(
     text: str = Form(..., description="Text to synthesize into spoken audio")
 ) -> dict[str, Any]:
-    """Synthesize speech metadata (returns Web Speech API / TTS routing guidance)."""
+    """Synthesize speech metadata (returns Web Speech API / Sarvam TTS routing guidance)."""
     clean_text = text.strip()
     if not clean_text:
         raise HTTPException(status_code=400, detail="Text parameter cannot be empty.")
     return {
         "status": "ready",
         "text": clean_text,
-        "backend": "inworld_ai",
-        "message": "Use /tts for studio voice synthesis."
+        "backend": "sarvam_ai",
+        "message": "Use /tts for Sarvam AI studio voice synthesis."
     }
 
 
@@ -986,12 +803,16 @@ async def list_conversations(authorization: str = Header(None)):
 
     conversations = []
     for r in rows:
+        try:
+            attachments = json.loads(r["attachments_json"]) if r["attachments_json"] else []
+        except Exception:
+            attachments = []
         conversations.append({
             "id": r["id"],
             "title": r["title"],
             "created_at": r["created_at"],
             "updated_at": r["updated_at"],
-            "attachments": json.loads(r["attachments_json"])
+            "attachments": attachments
         })
     return conversations
 
@@ -1016,7 +837,7 @@ async def get_conversation(conversation_id: str, authorization: str = Header(Non
                         "attachments": row.get("attachments") or []
                     }
         except Exception as exc:
-            print(f"Supabase detail warning, falling back to SQLite: {exc}")
+            logger.warning(f"Supabase detail warning, falling back to SQLite: {exc}")
 
     # 2. Local SQLite fallback
     conn = get_db_connection()
@@ -1031,11 +852,20 @@ async def get_conversation(conversation_id: str, authorization: str = Header(Non
     if not row:
         raise HTTPException(status_code=404, detail="Conversation not found.")
 
+    try:
+        messages = json.loads(row["messages_json"]) if row["messages_json"] else []
+    except Exception:
+        messages = []
+    try:
+        attachments = json.loads(row["attachments_json"]) if row["attachments_json"] else []
+    except Exception:
+        attachments = []
+
     return {
         "id": row["id"],
         "title": row["title"],
-        "messages": json.loads(row["messages_json"]),
-        "attachments": json.loads(row["attachments_json"])
+        "messages": messages,
+        "attachments": attachments
     }
 
 
