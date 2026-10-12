@@ -414,4 +414,26 @@ export const MusicIcon = ({ size = 18, strokeWidth = 1.85, className = '' }) => 
   </svg>
 );
 
+export const ScanEyeIcon = ({ size = 18, strokeWidth = 1.85, className = '' }) => (
+  <svg {...baseIconProps(size, strokeWidth, className)}>
+    <path d="M3 7V5a2 2 0 0 1 2-2h2" />
+    <path d="M17 3h2a2 2 0 0 1 2 2v2" />
+    <path d="M21 17v2a2 2 0 0 1-2 2h-2" />
+    <path d="M7 21H5a2 2 0 0 1-2-2v-2" />
+    <circle cx="12" cy="12" r="3" />
+    <path d="m16 16-1.5-1.5" />
+  </svg>
+);
+
+export const CrosshairIcon = ({ size = 18, strokeWidth = 1.85, className = '' }) => (
+  <svg {...baseIconProps(size, strokeWidth, className)}>
+    <circle cx="12" cy="12" r="10" />
+    <line x1="22" y1="12" x2="18" y2="12" />
+    <line x1="6" y1="12" x2="2" y2="12" />
+    <line x1="12" y1="6" x2="12" y2="2" />
+    <line x1="12" y1="22" x2="12" y2="18" />
+  </svg>
+);
+
+
 

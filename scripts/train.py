@@ -40,7 +40,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument("--learning-rate", type=float, default=1e-3)
     parser.add_argument("--validation-split", type=float, default=0.2)
-    parser.add_argument("--subset", type=int, default=None, help="Train on subset of N samples for fast live demonstration")
+    parser.add_argument("--subset", type=int, default=None, help="Train on subset of N samples for fast execution")
     parser.add_argument("--output", type=Path, default=None)
     return parser.parse_args()
 

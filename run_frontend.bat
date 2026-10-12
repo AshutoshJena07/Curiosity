@@ -26,7 +26,7 @@ IF NOT EXIST "node_modules\vite\bin\vite.js" (
 )
 
 echo [1/2] Freeing port 5173 if occupied...
-powershell -NoProfile -Command "Get-NetTCPConnection -LocalPort 5173 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue; Write-Host ('Killed PID ' + $_.OwningProcess) }"
+powershell -NoProfile -Command "try { (Get-NetTCPConnection -LocalPort 5173 -ErrorAction SilentlyContinue).OwningProcess | ForEach-Object { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue } } catch {}"
 
 echo.
 echo [2/2] Starting Vite Dev Server on http://localhost:5173

@@ -132,6 +132,12 @@ class UniversalDocumentRecognizer:
             "specification", "architecture", "system design", "api", "database",
             "deployment", "infrastructure", "configuration", "endpoints", "latency"
         ]),
+        ("Academic Practical Lab Manual & Experiment Report", [
+            "name of the experiment", "experiment", "pseudo code", "flow chart",
+            "compilation of code", "algorithm", "learning by doing", "subject code",
+            "academic year", "deep learning for image", "activation functions", "soet",
+            "applied and action learning"
+        ]),
         ("Academic Transcript & Grade Record", [
             "marksheet", "transcript", "grade card", "sgpa", "cgpa", "semester", "credits"
         ])
@@ -152,32 +158,93 @@ class UniversalDocumentRecognizer:
         entities: Dict[str, Any] = {}
         lines = [line.strip() for line in text.splitlines() if line.strip()]
 
-        # 1. Headline / Document Title Detection (Reject garbled non-Latin characters and logo stamps)
-        candidate_titles: List[tuple[str, int]] = []
-        for line in lines[:20]:
-            clean = line.strip()
-            if len(clean) < 4 or len(clean) > 130:
-                continue
-            # Must have at least 4 ASCII letters to avoid logo noise like 'ேளத ளனே'
-            ascii_letters = sum(1 for c in clean if c.isascii() and c.isalpha())
-            if ascii_letters < 4:
-                continue
-            # Check for non-ASCII ratio
-            non_ascii = sum(1 for c in clean if ord(c) > 127)
-            if (non_ascii / len(clean)) > 0.15:
-                continue
-            candidate_titles.append((clean, ascii_letters))
+        # Helper to reject junk footers, page numbering, and boilerplate rules
+        def is_junk_footer(line_str: str) -> bool:
+            l = line_str.lower()
+            return any(junk in l for junk in [
+                "two sheets", "sheets per experiment", "page no", "page number",
+                "applicable according to", "as applicable", "all rights reserved",
+                "strictly confidential", "printed on", "cell in[", "plt.show"
+            ])
 
-        if candidate_titles:
-            # Priority: clean lines matching recognized document titles
-            priority = next(
-                (c[0] for c in candidate_titles if any(kw in c[0].lower() for kw in [
-                    "hall ticket", "admit card", "certificate", "invoice", "agreement",
-                    "report", "examination", "statement", "curriculum", "university", "department"
-                ])),
-                None
-            )
-            entities["title"] = priority or candidate_titles[0][0]
+        # 1. Explicit Academic & Document Title Detection (Highest Priority)
+        explicit_title = None
+        exp_m = re.search(r"Name\s*of\s*(?:the\s*)?Experiment\s*[:\-]?\s*([^\n\r]{6,200})", text, re.IGNORECASE)
+        if exp_m:
+            clean_exp = exp_m.group(1).split("*")[0].strip()
+            if len(clean_exp) >= 8 and not is_junk_footer(clean_exp):
+                entities["experiment_name"] = clean_exp
+                explicit_title = clean_exp
+
+        subj_m = re.search(r"Subject(?:\s*Name)?\s*[:\-]?\s*([A-Za-z0-9\s,\(\)\/\-]{4,60})", text, re.IGNORECASE)
+        if subj_m:
+            clean_subj = subj_m.group(1).split("Subject")[0].split("Semester")[0].strip()
+            entities["subject_name"] = clean_subj
+            if not explicit_title and len(clean_subj) >= 4:
+                explicit_title = f"{clean_subj} Laboratory Experiment"
+
+        # Additional Academic Metadata
+        subj_code_m = re.search(r"Subject\s*Code\s*[:\-]?\s*([A-Za-z0-9]{4,15})", text, re.IGNORECASE)
+        if subj_code_m:
+            entities["subject_code"] = subj_code_m.group(1).strip()
+
+        acad_yr_m = re.search(r"Academic\s*Year\s*[:\-]?\s*([0-9]{4}[\-\/][0-9]{2,4})", text, re.IGNORECASE)
+        if acad_yr_m:
+            entities["academic_year"] = acad_yr_m.group(1).strip()
+
+        sem_m = re.search(r"Semester\s*[:\-]?\s*([A-Za-z0-9]{1,10})", text, re.IGNORECASE)
+        if sem_m:
+            entities["semester"] = sem_m.group(1).strip()
+
+        prog_m = re.search(r"Program(?:me)?\s*[:\-]?\s*([A-Za-z0-9\.\s]{2,20})", text, re.IGNORECASE)
+        if prog_m:
+            entities["program"] = prog_m.group(1).strip()
+
+        branch_m = re.search(r"Branch\s*[:\-]?\s*([A-Za-z0-9\s]{2,20})", text, re.IGNORECASE)
+        if branch_m:
+            entities["branch"] = branch_m.group(1).strip()
+
+        school_m = re.search(r"(?:School|Campus)\s*[:\-]?\s*([A-Za-z0-9\s,]{3,40})", text, re.IGNORECASE)
+        if school_m:
+            entities["institution"] = school_m.group(1).strip()
+
+        # Check Coding Algorithm Steps
+        code_steps = re.findall(r"(?:^[0-9]\.\s*|\b[0-9]\.\s*)([A-Za-z0-9\s,\(\)]{6,70})", text, re.MULTILINE)
+        if code_steps:
+            entities["algorithm_steps"] = [s.strip() for s in code_steps[:10] if not is_junk_footer(s)]
+
+        # Check Testing Phase / Compilation Errors
+        err_m = re.search(r"([A-Za-z_]+Error:\s*[^\n\r]{4,100})", text, re.IGNORECASE)
+        if err_m:
+            entities["detected_code_error"] = err_m.group(1).strip()
+
+        # 2. General Headline Fallback (with strict junk footer exclusion)
+        if explicit_title:
+            entities["title"] = explicit_title
+        else:
+            candidate_titles: List[tuple[str, int]] = []
+            for line in lines[:25]:
+                clean = line.strip()
+                if len(clean) < 4 or len(clean) > 130 or is_junk_footer(clean):
+                    continue
+                ascii_letters = sum(1 for c in clean if c.isascii() and c.isalpha())
+                if ascii_letters < 4:
+                    continue
+                non_ascii = sum(1 for c in clean if ord(c) > 127)
+                if (non_ascii / len(clean)) > 0.15:
+                    continue
+                candidate_titles.append((clean, ascii_letters))
+
+            if candidate_titles:
+                priority = next(
+                    (c[0] for c in candidate_titles if any(kw in c[0].lower() for kw in [
+                        "hall ticket", "admit card", "certificate", "invoice", "agreement",
+                        "report", "examination", "statement", "curriculum", "university", "department"
+                    ])),
+                    None
+                )
+                multi_word = next((c[0] for c in candidate_titles if len(c[0].split()) >= 2), None)
+                entities["title"] = priority or multi_word or candidate_titles[0][0]
 
         # 2. Candidate / Individual Name
         name_patterns = [
@@ -366,6 +433,33 @@ class UniversalDocumentRecognizer:
 
         return rows[:15]
 
+    @classmethod
+    def sanitize_code_and_parentheses(cls, text: str) -> str:
+        """Repairs OCR-induced unbalanced parentheses and syntax errors in neural network code lines."""
+        if not text:
+            return ""
+
+        lines = text.splitlines()
+        repaired_lines = []
+        for line in lines:
+            trimmed = line.strip()
+            # Detect neural network layers and python code definitions
+            if any(token in trimmed for token in ["model.add", "Dense(", "Conv2D(", "input_shape=", "Sequential(", "nn.Linear"]):
+                opens = trimmed.count("(")
+                closes = trimmed.count(")")
+                if closes > opens:
+                    excess = closes - opens
+                    fixed = trimmed
+                    while excess > 0 and fixed.endswith(")"):
+                        fixed = fixed[:-1].rstrip()
+                        excess -= 1
+                    indent = line[:len(line) - len(line.lstrip())]
+                    repaired_lines.append(indent + fixed)
+                    continue
+            repaired_lines.append(line)
+
+        return "\n".join(repaired_lines)
+
 
 class DocumentIntelligenceExtractor:
     """Unified Layer 3 Extraction service across PDFs, Images, and Office Docs."""
@@ -471,6 +565,7 @@ class DocumentIntelligenceExtractor:
             raw_text = ocr_text
 
         if raw_text:
+            raw_text = UniversalDocumentRecognizer.sanitize_code_and_parentheses(raw_text)
             result.raw_text = raw_text
             result.ocr_spans = spans
             result.mean_ocr_confidence = mean_conf

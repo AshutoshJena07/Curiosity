@@ -82,10 +82,67 @@ class YOLO11Detector:
                         )
                     )
 
-            return detected_objects
+            # Apply Universal Class-Wise Non-Maximum Suppression (NMS) & Containment Filter
+            return self._apply_nms(detected_objects)
         except Exception as exc:
             logger.warning(f"[Layer 2] YOLO11 detection error: {exc}")
             return []
+
+    @staticmethod
+    def _apply_nms(objects: List[DetectedObject], iou_thresh: float = 0.42, containment_thresh: float = 0.62) -> List[DetectedObject]:
+        """Universally deduplicates overlapping boxes of the same class across all media."""
+        if len(objects) <= 1:
+            return objects
+
+        # Group by class label
+        by_class: Dict[str, List[DetectedObject]] = {}
+        for obj in objects:
+            by_class.setdefault(obj.label.lower(), []).append(obj)
+
+        kept: List[DetectedObject] = []
+        for label, group in by_class.items():
+            # Sort by confidence descending
+            sorted_objs = sorted(group, key=lambda o: o.confidence, reverse=True)
+            class_kept: List[DetectedObject] = []
+
+            for candidate in sorted_objs:
+                b1 = candidate.box
+                a1 = max(1.0, (b1[2] - b1[0]) * (b1[3] - b1[1]))
+                is_duplicate = False
+
+                for existing in class_kept:
+                    b2 = existing.box
+                    a2 = max(1.0, (b2[2] - b2[0]) * (b2[3] - b2[1]))
+
+                    ix1 = max(b1[0], b2[0])
+                    iy1 = max(b1[1], b2[1])
+                    ix2 = min(b1[2], b2[2])
+                    iy2 = min(b1[3], b2[3])
+
+                    inter_w = max(0.0, ix2 - ix1)
+                    inter_h = max(0.0, iy2 - iy1)
+                    inter_area = inter_w * inter_h
+
+                    iou = inter_area / (a1 + a2 - inter_area) if (a1 + a2 - inter_area) > 0 else 0
+                    containment = inter_area / min(a1, a2)
+
+                    # Same physical entity if high IoU or one box is substantially nested within the other
+                    if label == "person":
+                        if iou >= 0.45 or containment >= 0.52:
+                            is_duplicate = True
+                            break
+                    elif iou >= iou_thresh or containment >= containment_thresh:
+                        is_duplicate = True
+                        break
+
+                if not is_duplicate:
+                    class_kept.append(candidate)
+
+            kept.extend(class_kept)
+
+        # Restore original confidence ordering
+        kept.sort(key=lambda o: o.confidence, reverse=True)
+        return kept
 
 
 class ResNetClassifier:
@@ -155,7 +212,7 @@ class VisionPerceptionPipeline:
             cls._instance = VisionPerceptionPipeline()
         return cls._instance
 
-    def process(self, image: Optional[Image.Image]) -> PerceptionResult:
+    def process(self, image: Optional[Image.Image], prompt: str = "") -> PerceptionResult:
         """Run YOLOv11 and ResNet-50 on the input image."""
         t0 = time.time()
         result = PerceptionResult()
@@ -192,6 +249,73 @@ class VisionPerceptionPipeline:
             result.resnet_summary = f"Top ImageNet predictions: {', '.join(top_strs)}."
         else:
             result.resnet_summary = "Scene classification inconclusive."
+
+        # 2B. Wildlife & Multi-Species Animal Intelligence Engine
+        try:
+            from src.curiosity.layer_2_perception.wildlife_detector import WildlifeFaunaEngine
+            detected = WildlifeFaunaEngine.enhance_detections(
+                image=image,
+                initial_detected=detected,
+                resnet_classifier=self.resnet_classifier,
+                yolo_detector=self.yolo_detector,
+                prompt=prompt
+            )
+            result.yolo_objects = detected
+
+            # Recompute counts with verified species
+            counts = {}
+            for obj in detected:
+                counts[obj.label] = counts.get(obj.label, 0) + 1
+            result.yolo_counts = counts
+
+            if detected:
+                items_str = []
+                for label, count in counts.items():
+                    plural = f"{count} {label}s" if count > 1 and not (label.endswith('s') or label.endswith('sheep')) else f"1 {label}"
+                    best_conf = max(o.confidence for o in detected if o.label == label)
+                    items_str.append(f"{plural} ({best_conf * 100:.1f}% confidence)")
+                result.yolo_summary = f"Detected {len(detected)} object(s): " + ", ".join(items_str) + "."
+        except Exception as wild_err:
+            logger.warning(f"[Layer 2] Wildlife detection notice: {wild_err}")
+
+        # 3. Run Traffic & Safety Violation Engine (Helmet, Triple Riding, Phone Distraction)
+        try:
+            from src.curiosity.layer_2_perception.traffic_violation_detector import TrafficRuleViolationEngine
+            violations, traffic_summary = TrafficRuleViolationEngine.analyze(image, detected, prompt=prompt)
+            result.traffic_violations = violations
+            result.traffic_summary = traffic_summary
+        except Exception as traffic_err:
+            logger.warning(f"[Layer 2] Traffic rule evaluation notice: {traffic_err}")
+
+        # 4. Generate Visual Detection & Violation Overlay Image
+        try:
+            from src.curiosity.layer_2_perception.image_annotator import VisualDetectionAnnotator
+            low_p = (prompt or "").lower()
+            explicit_traffic = any(k in low_p for k in [
+                "helmet", "triple", "tripling", "3seater", "3 seater", "3-seater",
+                "challan", "violation", "fine", "penalty", "traffic rule", "rule break", "mv act"
+            ])
+            counts = result.yolo_counts or {}
+            has_triple_riding = any(v.rider_count >= 3 for v in (result.traffic_violations or []))
+            is_general_street_with_animals = ("cow" in counts or "ox" in counts) and counts.get("car", 0) >= 1
+            
+            show_traffic_overlay = explicit_traffic or has_triple_riding or (bool(result.traffic_violations) and not is_general_street_with_animals and ("motorcycle" in counts or "bicycle" in counts))
+            overlay_violations = result.traffic_violations if show_traffic_overlay else None
+            annotated_url = VisualDetectionAnnotator.annotate(
+                image=image,
+                detected_objects=detected,
+                traffic_violations=overlay_violations
+            )
+            result.annotated_image = annotated_url
+        except Exception as anno_err:
+            logger.warning(f"[Layer 2] Visual annotation overlay notice: {anno_err}")
+
+        # 5. Run AI-Generated & Deepfake Authenticity Forensics
+        try:
+            from src.curiosity.layer_2_perception.authenticity_detector import ImageAuthenticityEngine
+            result.authenticity = ImageAuthenticityEngine.evaluate(image)
+        except Exception as auth_err:
+            logger.warning(f"[Layer 2] Authenticity forensics notice: {auth_err}")
 
         result.duration_s = time.time() - t0
         return result

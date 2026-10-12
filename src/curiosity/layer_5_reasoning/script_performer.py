@@ -32,10 +32,17 @@ QUOTA_WINDOW_HOURS = 24
 
 PERFORMANCE_TRIGGERS = [
     "perform this",
+    "peform this",
+    "preform this",
     "perform this script",
+    "peform this script",
     "perform script",
+    "peform script",
     "perform the script",
     "perform it",
+    "peform it",
+    "perform",
+    "peform",
     "voice this",
     "voice this script",
     "voice the script",
@@ -45,6 +52,7 @@ PERFORMANCE_TRIGGERS = [
     "act this out",
     "act out this script",
     "read this script",
+    "read this",
     "dramatize this",
     "voiceover",
     "voice over",
@@ -52,7 +60,8 @@ PERFORMANCE_TRIGGERS = [
     "generate audio",
     "record this script",
     "audio performance",
-    "speak this script"
+    "speak this script",
+    "speak this"
 ]
 
 

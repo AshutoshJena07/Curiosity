@@ -89,18 +89,39 @@ export default function ChatComposer({
   };
 
   const handlePaste = (e) => {
-    const items = (e.clipboardData || window.clipboardData)?.items;
-    if (!items) return;
-    for (let i = 0; i < items.length; i++) {
-      const item = items[i];
-      if (item.type && item.type.startsWith('image/')) {
-        const file = item.getAsFile();
-        if (file) {
+    const clipboardData = e.clipboardData || window.clipboardData;
+    if (!clipboardData) return;
+
+    // 1. Check clipboard files (files copied from File Explorer / desktop)
+    if (clipboardData.files && clipboardData.files.length > 0) {
+      for (let i = 0; i < clipboardData.files.length; i++) {
+        const file = clipboardData.files[i];
+        if (file && (file.type?.startsWith('image/') || /\.(png|jpe?g|webp|bmp|gif|svg)$/i.test(file.name || ''))) {
           e.preventDefault();
-          if (onAttachFile) {
-            onAttachFile(file);
-          }
+          if (onAttachFile) onAttachFile(file);
           return;
+        }
+      }
+    }
+
+    // 2. Check clipboard items (copied image from browser, snipping tool, canvas)
+    if (clipboardData.items && clipboardData.items.length > 0) {
+      for (let i = 0; i < clipboardData.items.length; i++) {
+        const item = clipboardData.items[i];
+        if (item.type && item.type.startsWith('image/')) {
+          const file = item.getAsFile();
+          if (file) {
+            e.preventDefault();
+            if (onAttachFile) onAttachFile(file);
+            return;
+          }
+        } else if (item.kind === 'file') {
+          const file = item.getAsFile();
+          if (file && (file.type?.startsWith('image/') || /\.(png|jpe?g|webp|bmp|gif|svg)$/i.test(file.name || ''))) {
+            e.preventDefault();
+            if (onAttachFile) onAttachFile(file);
+            return;
+          }
         }
       }
     }
@@ -141,7 +162,7 @@ export default function ChatComposer({
           <textarea
             ref={textareaRef}
             className="composer-text-area"
-            placeholder={isAnalyzing ? (analysisStatus || "Analyzing file...") : "How can I help you today?"}
+            placeholder={isAnalyzing ? (analysisStatus || "Analyzing file...") : "Ask anything or paste image (Ctrl+V)..."}
             rows={1}
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}

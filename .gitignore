@@ -33,12 +33,14 @@ data/raw/*
 data/processed/*
 data/cache/*
 data/generated_audio/*
+data/annotated_images/*
 *.pt
 *.pth
 !data/raw/.gitkeep
 !data/processed/.gitkeep
 !data/cache/.gitkeep
 !data/generated_audio/.gitkeep
+!data/annotated_images/.gitkeep
 !models/.gitkeep
 
 # Application output & logs

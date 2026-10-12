@@ -34,8 +34,15 @@ export default function WorkspacePage({
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisStatus, setAnalysisStatus] = useState('');
 
-  // Active loaded session identifier (for SQLite syncing)
-  const [currentSessionId, setCurrentSessionId] = useState(() => Date.now().toString());
+  // Active loaded session identifier (for SQLite and multi-turn persistence)
+  const [currentSessionId, setCurrentSessionId] = useState(() => {
+    if (conversationId) return conversationId;
+    const cached = sessionStorage.getItem('curiosity_active_session_id');
+    if (cached) return cached;
+    const newId = Date.now().toString();
+    sessionStorage.setItem('curiosity_active_session_id', newId);
+    return newId;
+  });
   const [conversationsList, setConversationsList] = useState([]);
 
   // Chat Data States (Unique IDs and dynamic timestamps)
@@ -127,19 +134,26 @@ export default function WorkspacePage({
     };
   }, []);
 
-  // Load past conversation if ID is provided in URL path
+  // Load past conversation if ID is provided in URL path or stored in active session
   useEffect(() => {
     async function loadPastSession() {
-      if (!conversationId) return;
+      const targetId = conversationId || sessionStorage.getItem('curiosity_active_session_id');
+      if (!targetId) return;
+
+      // Avoid overwriting or re-fetching if we are already viewing this active session and have messages
+      if (currentSessionId === targetId && messages.length > 0) {
+        return;
+      }
 
       // 1. Try server fetch if user is logged in
       if (token && !guestMode) {
         try {
           setAnalysisStatus('Loading conversation history...');
           setIsAnalyzing(true);
-          const detail = await fetchConversationDetail(conversationId, token);
-          if (detail && detail.messages) {
+          const detail = await fetchConversationDetail(targetId, token);
+          if (detail && detail.messages && detail.messages.length > 0) {
             setCurrentSessionId(detail.id);
+            sessionStorage.setItem('curiosity_active_session_id', detail.id);
             const formattedMessages = (detail.messages || [])
               .filter(m => m.id !== 'greeting' && !m.content?.startsWith('Hello! I am Curiosity. Upload any image'))
               .map(m => ({
@@ -169,9 +183,10 @@ export default function WorkspacePage({
         const stored = localStorage.getItem('curiosity_local_conversations');
         if (stored) {
           const list = JSON.parse(stored);
-          const match = list.find(c => c.id === conversationId);
+          const match = list.find(c => String(c.id) === String(targetId));
           if (match && match.messages && match.messages.length > 0) {
             setCurrentSessionId(match.id);
+            sessionStorage.setItem('curiosity_active_session_id', match.id);
             setMessages(
               (match.messages || [])
                 .filter(m => m.id !== 'greeting' && !m.content?.startsWith('Hello! I am Curiosity. Upload any image'))
@@ -277,8 +292,10 @@ export default function WorkspacePage({
     try {
       const existingStr = localStorage.getItem('curiosity_local_conversations');
       let existing = existingStr ? JSON.parse(existingStr) : [];
-      const idx = existing.findIndex(c => c.id === currentSessionId);
+      const idx = existing.findIndex(c => String(c.id) === String(currentSessionId));
       if (idx >= 0) {
+        payload.title = existing[idx].title || cleanTitle;
+        payload.created_at = existing[idx].created_at || payload.created_at;
         existing[idx] = payload;
       } else {
         existing.unshift(payload);
@@ -330,22 +347,37 @@ export default function WorkspacePage({
   }, []);
 
   // Centralized File Validation and Attachment Setter
+  // Centralized File Validation and Attachment Setter
   const handleAttachFile = useCallback((file) => {
     if (!file) return;
     let effectiveFile = file;
 
-    // Handle pasted images or blobs that lack a proper file name or extension
-    if (file.type && file.type.startsWith('image/')) {
-      const parts = (file.name || '').split('.');
-      const hasExt = parts.length > 1 && parts.pop().length >= 2;
-      if (!hasExt || file.name === 'blob' || file.name === 'image') {
-        const subtype = file.type.split('/')[1] || 'png';
+    // Detect and normalize image files (especially from clipboard paste)
+    const isImageMime = effectiveFile.type && effectiveFile.type.startsWith('image/');
+    const isImageExt = /\.(png|jpe?g|webp|bmp|gif|svg|ico|tiff?)$/i.test(effectiveFile.name || '');
+
+    if (isImageMime || isImageExt) {
+      let mime = effectiveFile.type;
+      if (!mime || !mime.startsWith('image/')) {
+        const ext = (effectiveFile.name || '').split('.').pop()?.toLowerCase() || 'png';
+        mime = ext === 'jpg' ? 'image/jpeg' : `image/${ext}`;
+      }
+
+      // Check if filename is missing or generic (common in clipboard pastes)
+      const rawName = effectiveFile.name || '';
+      const parts = rawName.split('.');
+      const hasProperName = parts.length > 1 && parts[0].length > 0 && rawName !== 'blob' && rawName !== 'image';
+
+      if (!hasProperName) {
+        const subtype = mime.split('/')[1] || 'png';
         const safeExt = subtype === 'jpeg' ? 'jpg' : subtype.split('+')[0];
         const newName = `pasted_image_${Date.now()}.${safeExt}`;
-        effectiveFile = new File([file], newName, { type: file.type });
+        effectiveFile = new File([effectiveFile], newName, { type: mime });
+      } else if (!effectiveFile.type) {
+        effectiveFile = new File([effectiveFile], effectiveFile.name, { type: mime });
       }
-    } else if (!validateFileExtension(file.name, file.type)) {
-      alert(`Unsupported file format: "${file.name}".\n\nAllowed formats:\n• Images: png, jpg, jpeg, webp, bmp, gif, svg\n• Videos: mp4, avi, mov, mkv, webm\n• Documents: pdf, docx, doc, pptx, ppt\n• Data: xlsx, xls, csv\n• Text/Code: txt, json, md, py, js, ts`);
+    } else if (!validateFileExtension(effectiveFile.name, effectiveFile.type)) {
+      alert(`Unsupported file format: "${effectiveFile.name}".\n\nAllowed formats:\n• Images: png, jpg, jpeg, webp, bmp, gif, svg\n• Videos: mp4, avi, mov, mkv, webm\n• Documents: pdf, docx, doc, pptx, ppt\n• Data: xlsx, xls, csv\n• Text/Code: txt, json, md, py, js, ts`);
       return;
     }
     
@@ -353,11 +385,13 @@ export default function WorkspacePage({
       URL.revokeObjectURL(activeFile.previewUrl);
     }
 
-    const previewUrl = effectiveFile.type?.startsWith('image/') ? URL.createObjectURL(effectiveFile) : '';
+    const isImage = Boolean(effectiveFile.type?.startsWith('image/'));
+    const previewUrl = isImage ? URL.createObjectURL(effectiveFile) : '';
+
     setActiveFile({
       fileObj: effectiveFile,
       name: effectiveFile.name,
-      type: effectiveFile.type,
+      type: effectiveFile.type || 'image/png',
       previewUrl: previewUrl
     });
   }, [activeFile]);
@@ -396,22 +430,39 @@ export default function WorkspacePage({
   // Global Clipboard Paste handler (Ctrl+V anywhere in workspace)
   useEffect(() => {
     const handlePaste = (e) => {
-      const items = (e.clipboardData || window.clipboardData)?.items;
-      if (!items) return;
-      for (const item of items) {
-        if (item.type && item.type.startsWith('image/')) {
-          const file = item.getAsFile();
-          if (file) {
+      const clipboardData = e.clipboardData || window.clipboardData;
+      if (!clipboardData) return;
+
+      // 1. Check clipboard files (files copied from File Explorer / desktop)
+      if (clipboardData.files && clipboardData.files.length > 0) {
+        for (let i = 0; i < clipboardData.files.length; i++) {
+          const file = clipboardData.files[i];
+          if (file && (file.type?.startsWith('image/') || /\.(png|jpe?g|webp|bmp|gif|svg)$/i.test(file.name || ''))) {
             e.preventDefault();
             handleAttachFile(file);
-            break;
+            return;
           }
-        } else if (item.kind === 'file') {
-          const file = item.getAsFile();
-          if (file) {
-            e.preventDefault();
-            handleAttachFile(file);
-            break;
+        }
+      }
+
+      // 2. Check clipboard items (copied image from browser, snipping tool, canvas)
+      if (clipboardData.items && clipboardData.items.length > 0) {
+        for (let i = 0; i < clipboardData.items.length; i++) {
+          const item = clipboardData.items[i];
+          if (item.type && item.type.startsWith('image/')) {
+            const file = item.getAsFile();
+            if (file) {
+              e.preventDefault();
+              handleAttachFile(file);
+              return;
+            }
+          } else if (item.kind === 'file') {
+            const file = item.getAsFile();
+            if (file && (file.type?.startsWith('image/') || /\.(png|jpe?g|webp|bmp|gif|svg)$/i.test(file.name || ''))) {
+              e.preventDefault();
+              handleAttachFile(file);
+              return;
+            }
           }
         }
       }
@@ -565,12 +616,17 @@ export default function WorkspacePage({
     stopAllAudio();
     setActiveFile(null);
     sessionFileRef.current = null;
-    setPrompt('');
-    setCurrentSessionId(Date.now().toString());
+    sessionStorage.removeItem('curiosity_active_session_id');
+    const newSessionId = Date.now().toString();
+    setCurrentSessionId(newSessionId);
     setMessages([]);
     
     // Redirect URL to a clean new workspace hash
-    navigate('#/workspace');
+    if (navigate) {
+      navigate('#/workspace');
+    } else {
+      window.location.hash = '#/workspace';
+    }
   };
 
   // Speaks specific text response from active message
@@ -683,8 +739,12 @@ export default function WorkspacePage({
         accuracy: result.accuracy,
         confidence: result.confidence,
         latency_s: result.pipeline_latency_s,
+        dl_metrics: result.dl_metrics || null,
+        category: result.category || null,
+        grounded_evidences: result.grounded_evidences || [],
         audio_url: result.audio_url || null,
         audio_filename: result.audio_filename || null,
+        annotated_image: result.annotated_image || null,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       };
 
@@ -693,7 +753,19 @@ export default function WorkspacePage({
       setServerStatus('online');
 
       // Sync updated conversation details back to SQLite database asynchronously
-      syncToDatabase(finalMessages);
+      await syncToDatabase(finalMessages);
+
+      // Lock current session in sessionStorage so it persists throughout active chatting
+      sessionStorage.setItem('curiosity_active_session_id', currentSessionId);
+
+      // Lock current session into the URL hash so reload / multi-turn stays strictly in this session
+      if (window.location.hash !== `#/workspace/${currentSessionId}`) {
+        if (navigate) {
+          navigate(`#/workspace/${currentSessionId}`);
+        } else {
+          window.location.hash = `#/workspace/${currentSessionId}`;
+        }
+      }
 
       if (autoSpeak) {
         playCloudTTS(result.answer, botMsgId);

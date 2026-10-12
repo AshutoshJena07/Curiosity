@@ -98,18 +98,85 @@ class IngestionResult:
 
 
 @dataclass
+class TrafficViolation:
+    """Traffic and Road Safety Rule Violation record."""
+    violation_type: str         # "Triple Riding", "No Helmet (Rider)", "No Helmet (Pillion)", "Phone Use"
+    rule_code: str              # "Section 128, MV Act", "Section 129, MV Act", "Section 184(c), MV Act"
+    severity: str               # "CRITICAL", "HIGH", "MEDIUM"
+    confidence: float           # 0.0 to 1.0
+    description: str            # Detailed observation
+    penalty: str                # Legal fine / penalty description
+    bbox: Optional[List[float]] = None
+    vehicle_bbox: Optional[List[float]] = None
+    rider_count: int = 1
+    helmets_detected: int = 0
+    helmets_missing: int = 0
+
+    def to_dict(self) -> Dict[str, Any]:
+        res: Dict[str, Any] = {
+            "violation_type": self.violation_type,
+            "rule_code": self.rule_code,
+            "severity": self.severity,
+            "confidence": round(self.confidence, 4),
+            "description": self.description,
+            "penalty": self.penalty,
+            "rider_count": self.rider_count,
+            "helmets_detected": self.helmets_detected,
+            "helmets_missing": self.helmets_missing
+        }
+        if self.bbox:
+            res["bbox"] = [round(c, 2) for c in self.bbox]
+        if self.vehicle_bbox:
+            res["vehicle_bbox"] = [round(c, 2) for c in self.vehicle_bbox]
+        return res
+
+
+@dataclass
+class AuthenticityResult:
+    """Forensic evaluation of AI generation or deepfake probability."""
+    is_ai_generated: bool
+    verdict: str  # "AI Generated / Synthetic", "Authentic Camera Image", "Suspected Manipulation"
+    ai_probability: float  # 0.0 to 1.0
+    authenticity_score: float  # 0.0 to 100.0%
+    confidence_level: str  # "High Confidence", "Moderate Confidence", "Heuristic Assessment"
+    indicators: List[str] = field(default_factory=list)
+    spectral_fft_score: float = 0.0
+    ela_anomaly_score: float = 0.0
+    noise_residual_score: float = 0.0
+    metadata_score: float = 0.0
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "is_ai_generated": self.is_ai_generated,
+            "verdict": self.verdict,
+            "ai_probability": round(self.ai_probability, 4),
+            "authenticity_score": round(self.authenticity_score, 1),
+            "confidence_level": self.confidence_level,
+            "indicators": self.indicators,
+            "spectral_fft_score": round(self.spectral_fft_score, 3),
+            "ela_anomaly_score": round(self.ela_anomaly_score, 3),
+            "noise_residual_score": round(self.noise_residual_score, 3),
+            "metadata_score": round(self.metadata_score, 3)
+        }
+
+
+@dataclass
 class PerceptionResult:
-    """Result from Layer 2 Perception (YOLOv11 & ResNet-50)."""
+    """Result from Layer 2 Perception (YOLOv11 & ResNet-50 & Authenticity)."""
     yolo_objects: List[DetectedObject] = field(default_factory=list)
     yolo_counts: Dict[str, int] = field(default_factory=dict)
     yolo_summary: str = ""
     resnet_top5: List[ImageNetPrediction] = field(default_factory=list)
     resnet_top1: str = ""
     resnet_summary: str = ""
+    traffic_violations: List[TrafficViolation] = field(default_factory=list)
+    traffic_summary: str = ""
+    authenticity: Optional[AuthenticityResult] = None
+    annotated_image: Optional[str] = None
     duration_s: float = 0.0
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        res = {
             "yolo": {
                 "detected_objects": [o.to_dict() for o in self.yolo_objects],
                 "object_counts": self.yolo_counts,
@@ -121,8 +188,17 @@ class PerceptionResult:
                 "top5_predictions": [p.to_dict() for p in self.resnet_top5],
                 "summary": self.resnet_summary
             },
+            "traffic_analysis": {
+                "has_violations": bool(self.traffic_violations),
+                "violation_count": len(self.traffic_violations),
+                "violations": [v.to_dict() for v in self.traffic_violations],
+                "summary": self.traffic_summary
+            },
+            "authenticity": self.authenticity.to_dict() if self.authenticity else None,
+            "annotated_image": self.annotated_image,
             "perception_latency_s": round(self.duration_s, 3)
         }
+        return res
 
 
 @dataclass
@@ -192,6 +268,7 @@ class EngineOutput:
     grounded_evidences: List[Dict[str, Any]] = field(default_factory=list)
     audio_url: Optional[str] = None
     audio_filename: Optional[str] = None
+    annotated_image: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -203,5 +280,6 @@ class EngineOutput:
             "dl_metrics": self.dl_metrics,
             "grounded_evidences": self.grounded_evidences,
             "audio_url": self.audio_url,
-            "audio_filename": self.audio_filename
+            "audio_filename": self.audio_filename,
+            "annotated_image": self.annotated_image
         }

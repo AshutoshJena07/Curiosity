@@ -21,7 +21,7 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # Deep Learning Models Configuration
 YOLO_MODEL_NAME = "yolo11n.pt"  # Ultralytics YOLOv11 nano model
 RESNET_TOP_K = 5
-YOLO_CONFIDENCE_THRESHOLD = 0.25
+YOLO_CONFIDENCE_THRESHOLD = 0.20
 
 # OCR Configuration
 EASYOCR_LANGUAGES = ["en", "hi"]
@@ -31,7 +31,7 @@ EASYOCR_GPU = torch.cuda.is_available()
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
 OLLAMA_CHAT_URL = f"{OLLAMA_BASE_URL}/api/chat"
 DEFAULT_TEXT_MODEL = os.getenv("DEFAULT_TEXT_MODEL", "qwen2.5:1.5b")
-DEFAULT_VISION_MODEL = os.getenv("DEFAULT_VISION_MODEL", "qwen2.5vl:3b")
+DEFAULT_VISION_MODEL = os.getenv("DEFAULT_VISION_MODEL", "gemma3:4b")
 
 # Sarvam AI TTS Configuration
 SARVAM_API_KEY = os.getenv("SARVAM_API_KEY", os.getenv("SARVAM_API_SUBSCRIPTION_KEY", "sk_ifnmvwzp_6GQ219edjduibgcIRX3QxiV2"))

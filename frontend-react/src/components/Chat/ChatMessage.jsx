@@ -191,7 +191,7 @@ function formatFileSize(bytes) {
 }
 
 export default function ChatMessage({ message, onSpeak, isSpeakingThis }) {
-  const { role, text, imageUrl, fileBadge, fileName, fileType, fileSize, error, typing, audio_url, audio_filename } = message;
+  const { role, text, imageUrl, fileBadge, fileName, fileType, fileSize, error, typing, audio_url, audio_filename, annotated_image, dl_metrics, category } = message;
   const isBot = role === 'bot';
   const [copied, setCopied] = useState(false);
 
@@ -210,6 +210,9 @@ export default function ChatMessage({ message, onSpeak, isSpeakingThis }) {
   const isImageAttachment = Boolean(imageUrl || fileType === 'image');
   const isDocAttachment = Boolean(!imageUrl && (fileBadge || fileType === 'document' || fileName));
   const docDisplayName = fileName || fileBadge || 'Document';
+
+  // Check if media is document type
+  const isDocumentType = category === 'pdf_document' || category === 'office_document' || fileType === 'document' || Boolean(dl_metrics?.extraction?.document_genre && !['General Visual Scene', 'Photograph'].includes(dl_metrics?.extraction?.document_genre));
 
   return (
     <div className={`message-row ${role}`}>
@@ -335,6 +338,59 @@ export default function ChatMessage({ message, onSpeak, isSpeakingThis }) {
           </div>
         ) : (
           <>
+            {/* Visual Detection Overlay: Rendered for Bot if annotated image is available */}
+            {annotated_image && (
+              <div 
+                className="message-attachment-box annotated-image-card" 
+                style={{
+                  margin: '8px 0 14px 0',
+                  borderRadius: '14px',
+                  overflow: 'hidden',
+                  background: 'linear-gradient(135deg, rgba(15, 23, 42, 0.85), rgba(30, 41, 59, 0.9))',
+                  border: '1px solid rgba(56, 189, 248, 0.35)',
+                  boxShadow: '0 8px 30px rgba(0, 0, 0, 0.45), 0 0 16px rgba(56, 189, 248, 0.12)'
+                }}
+              >
+                <div 
+                  className="attachment-box-header"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '8px 14px',
+                    background: 'rgba(15, 23, 42, 0.95)',
+                    borderBottom: '1px solid rgba(255, 255, 255, 0.08)'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', fontWeight: '600', color: '#38bdf8' }}>
+                    {isDocumentType ? <FileTextIcon size={14} /> : <ImageIcon size={14} />}
+                    <span>{isDocumentType ? 'Document Page Preview (Page 1)' : 'Visual Detection & Rule Overlay Output'}</span>
+                  </div>
+                  <span style={{ fontSize: '11px', color: '#94a3b8', background: 'rgba(255,255,255,0.06)', padding: '2px 8px', borderRadius: '6px' }}>
+                    {isDocumentType 
+                      ? 'Page 1 Rendered'
+                      : (dl_metrics?.perception?.yolo?.total_objects !== undefined 
+                          ? `${dl_metrics.perception.yolo.total_objects} Object(s) Localized` 
+                          : 'AI Detection Overlay')}
+                  </span>
+                </div>
+                <div style={{ position: 'relative', background: '#070b14', padding: '6px', textAlign: 'center' }}>
+                  <img 
+                    src={annotated_image} 
+                    alt={isDocumentType ? "Document Page Preview" : "Visual Detection and Violation Output"} 
+                    className="attachment-box-img"
+                    style={{
+                      maxWidth: '100%',
+                      maxHeight: '460px',
+                      borderRadius: '8px',
+                      objectFit: 'contain',
+                      display: 'inline-block'
+                    }}
+                  />
+                </div>
+              </div>
+            )}
+
             {text && (
               <div className={`message-text ${error ? 'error' : ''}`}>
                 <MarkdownRenderer content={text} />

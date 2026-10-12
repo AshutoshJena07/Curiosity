@@ -60,7 +60,19 @@ class CuriosityEngine:
         session_key = str(user_id) if user_id else "global_workspace_session"
 
         # Check for multi-turn session persistence when no new file is passed
-        has_cached_media = (not file_bytes) and (session_key in cls._session_memory)
+        from src.curiosity.layer_5_reasoning.script_performer import is_script_performance_request
+        is_script_req = is_script_performance_request(prompt)
+
+        # STRICT ISOLATION: Only reuse cached media if:
+        # 1. No new file is uploaded
+        # 2. There is active ongoing conversation history in this turn (history is not empty!)
+        # 3. The request is NOT a script performance or conversational text query
+        has_cached_media = (
+            (not file_bytes)
+            and bool(history and len(history) > 0)
+            and not is_script_req
+            and (session_key in cls._session_memory)
+        )
 
         if has_cached_media:
             cached = cls._session_memory[session_key]
@@ -88,7 +100,7 @@ class CuriosityEngine:
             perception = PerceptionResult()
             if ingestion.is_visual or ingestion.image:
                 pipeline = VisionPerceptionPipeline.get_instance()
-                perception = pipeline.process(ingestion.image)
+                perception = pipeline.process(ingestion.image, prompt=prompt)
 
             # ── STEP 3: LAYER 3 EXTRACTION (EASYOCR & PYMUPDF) ───────────────
             extraction = ExtractionResult()
@@ -175,10 +187,18 @@ class CuriosityEngine:
             extra_metadata=scoring.breakdown
         )
 
+        img_dims = None
+        if getattr(ingestion, "image", None):
+            try:
+                img_dims = {"width": ingestion.image.width, "height": ingestion.image.height}
+            except Exception:
+                img_dims = None
+
         # Assemble Master DL Metrics dictionary
         dl_metrics = {
             "category": ingestion.category.value,
             "filename": ingestion.filename,
+            "image_dimensions": img_dims,
             "perception": perception.to_dict(),
             "extraction": extraction.to_dict(),
             "scoring": scoring.to_dict(),
@@ -195,7 +215,8 @@ class CuriosityEngine:
             dl_metrics=dl_metrics,
             grounded_evidences=[e.to_dict() for e in reasoning.grounded_evidences],
             audio_url=audio_url,
-            audio_filename=audio_filename
+            audio_filename=audio_filename,
+            annotated_image=None if (ingestion.category == MediaCategory.TEXT_ONLY or is_script_req) else perception.annotated_image
         )
 
         return output.to_dict()

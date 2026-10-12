@@ -6,6 +6,7 @@ import {
   MicIcon
 } from '../Common/Icons';
 import useSpeechRecognition from '../../hooks/useSpeechRecognition';
+import FileUploaderUI from './FileUploaderUI';
 
 export default function WelcomeScreen({ 
   onSelectSuggestion,
@@ -134,18 +135,39 @@ export default function WelcomeScreen({
   };
 
   const handlePaste = (e) => {
-    const items = (e.clipboardData || window.clipboardData)?.items;
-    if (!items) return;
-    for (let i = 0; i < items.length; i++) {
-      const item = items[i];
-      if (item.type && item.type.startsWith('image/')) {
-        const file = item.getAsFile();
-        if (file) {
+    const clipboardData = e.clipboardData || window.clipboardData;
+    if (!clipboardData) return;
+
+    // 1. Check clipboard files (files copied from File Explorer / desktop)
+    if (clipboardData.files && clipboardData.files.length > 0) {
+      for (let i = 0; i < clipboardData.files.length; i++) {
+        const file = clipboardData.files[i];
+        if (file && (file.type?.startsWith('image/') || /\.(png|jpe?g|webp|bmp|gif|svg)$/i.test(file.name || ''))) {
           e.preventDefault();
-          if (onAttachFile) {
-            onAttachFile(file);
-          }
+          if (onAttachFile) onAttachFile(file);
           return;
+        }
+      }
+    }
+
+    // 2. Check clipboard items (copied image from browser, snipping tool, canvas)
+    if (clipboardData.items && clipboardData.items.length > 0) {
+      for (let i = 0; i < clipboardData.items.length; i++) {
+        const item = clipboardData.items[i];
+        if (item.type && item.type.startsWith('image/')) {
+          const file = item.getAsFile();
+          if (file) {
+            e.preventDefault();
+            if (onAttachFile) onAttachFile(file);
+            return;
+          }
+        } else if (item.kind === 'file') {
+          const file = item.getAsFile();
+          if (file && (file.type?.startsWith('image/') || /\.(png|jpe?g|webp|bmp|gif|svg)$/i.test(file.name || ''))) {
+            e.preventDefault();
+            if (onAttachFile) onAttachFile(file);
+            return;
+          }
         }
       }
     }
@@ -177,26 +199,18 @@ export default function WelcomeScreen({
 
       {/* 2. Sleek Capsule Card Composer */}
       <div className="welcome-capsule-composer">
-        {activeFile && (
-          <div className="composer-attached-preview">
-            <span className="file-badge">📎 {activeFile.name}</span>
-            <button 
-              type="button" 
-              onClick={onRemoveFile}
-              className="remove-file-btn"
-              title="Remove attachment"
-            >
-              ×
-            </button>
-          </div>
-        )}
+        {/* Render file attachments wrapper (shows image thumbnail for pasted or attached images) */}
+        <FileUploaderUI 
+          activeFile={activeFile} 
+          onRemove={onRemoveFile} 
+        />
 
         {/* Top Textarea: "How can I help you today?" */}
         <div className="composer-textarea-container">
           <textarea
             ref={welcomeTextareaRef}
             className="composer-text-area"
-            placeholder={isAnalyzing ? "Analyzing file..." : "How can I help you today?"}
+            placeholder={isAnalyzing ? "Analyzing file..." : "How can I help you today? (Paste image with Ctrl+V)"}
             rows={1}
             value={welcomePrompt}
             onChange={(e) => setWelcomePrompt(e.target.value)}

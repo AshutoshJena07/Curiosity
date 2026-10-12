@@ -1,6 +1,16 @@
-# Local Image Assistant
+---
+title: Curiosity AI - Multimodal Vision & Evaluation
+emoji: 👁️
+colorFrom: blue
+colorTo: indigo
+sdk: docker
+app_port: 7860
+pinned: false
+license: mit
+---
 
-This project is an offline-first, ChatGPT-style image assistant.
+# Curiosity AI — Multimodal Vision, Perception & Real-Time Evaluation
+
 
 You give it **an image and a written instruction**, for example:
 
